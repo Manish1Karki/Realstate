@@ -1,0 +1,13 @@
+.sites-runtime/
+node_modules/
+.env
+.env.*
+!.env.example
+*.log
+**/.venv/
+**/__pycache__/
+**/.pytest_cache/
+aggregator/data/*
+!aggregator/data/.gitkeep
+aggregator/frontend/dist/
+aggregator/source_reviews.json
