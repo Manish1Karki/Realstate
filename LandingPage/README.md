@@ -1,4 +1,14 @@
-# React + Vite
+# Land Discover landing page
+
+The landing page sends visitors to the public property dashboard through the prominent **Browse properties** and **Search listings** actions. Browsing does not require sign-in.
+
+For local development, the dashboard defaults to `http://127.0.0.1:8000/`. To use another address, copy `.env.example` to `.env` and set:
+
+```env
+VITE_DASHBOARD_URL=https://your-dashboard.example/
+```
+
+Run the landing page with `npm run dev`. Run the FastAPI aggregator separately on port 8000.
 
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 
