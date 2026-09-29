@@ -1,31 +1,1054 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { createRoot } from 'react-dom/client';
-import { MapContainer, TileLayer, CircleMarker, Popup, useMap } from 'react-leaflet';
-import L from 'leaflet';
-import 'leaflet.heat';
-import 'leaflet/dist/leaflet.css';
-import { Map, Layers3, Database, Download, SlidersHorizontal, ArrowUpRight, MapPin, School, Hospital, Route, X, RefreshCw, Search, ChevronLeft, ChevronRight, Info, LandPlot, Building2, Compass } from 'lucide-react';
-import './style.css';
+import React, { useState, useEffect, useRef } from "react";
+import { createRoot } from "react-dom/client";
+import {
+  MapContainer,
+  TileLayer,
+  CircleMarker,
+  Popup,
+  useMap,
+} from "react-leaflet";
+import L from "leaflet";
+import "leaflet.heat";
+import "leaflet/dist/leaflet.css";
+import {
+  Map,
+  Layers3,
+  Database,
+  Download,
+  SlidersHorizontal,
+  ArrowUpRight,
+  MapPin,
+  School,
+  Hospital,
+  Route,
+  X,
+  RefreshCw,
+  Search,
+  ChevronLeft,
+  ChevronRight,
+  Info,
+  LandPlot,
+  Building2,
+  Compass,
+} from "lucide-react";
+import "./style.css";
 
-const api = async (url, signal) => { const r = await fetch(url, { signal }); if (!r.ok) { const t = await r.text(); throw new Error(`Request failed (${r.status}): ${t.slice(0, 180)}`); } return r.json(); };
-const money = n => n == null ? 'Not disclosed' : n >= 1e7 ? `NPR ${(n / 1e7).toFixed(2)} cr` : `NPR ${(n / 1e5).toFixed(1)} lakh`;
-const km = n => n == null ? 'Unknown' : `${n.toFixed(2)} km`;
-const initial = { district: '', area: '', ward: '', property_type: '', transaction: '', min_price: '', max_price: '', school_km: '', hospital_km: '', radius_m: '' };
-function Heat({ points, enabled }) { const map = useMap(); useEffect(() => { if (!enabled) return; const layer = L.heatLayer(points.map(p => [p.lat, p.lng, 0.5]), { radius: 28, blur: 23, maxZoom: 15, gradient: { .2: '#bbdfb4', .5: '#f5c86c', .8: '#e88c55', 1: '#ba4b4b' } }).addTo(map); return () => map.removeLayer(layer); }, [map, points, enabled]); return null; }
-function Fit({ points }) { const map = useMap(); useEffect(() => { if (points.length) map.fitBounds(points.map(p => [p.lat, p.lng]), { padding: [35, 35], maxZoom: 14 }); }, [map, points]); return null; }
-function PropertyMap({ data, onSelect, mode = 'price', mini = false }) { const points = data.items.filter(p => p.lat != null && p.lng != null); const [tileError, setTileError] = useState(false); return <div className={`map-shell ${mini ? 'mini' : ''}`}><MapContainer center={[27.705, 85.345]} zoom={12} scrollWheelZoom={false} style={{ height: '100%', width: '100%' }}><TileLayer url="https://tile.openstreetmap.org/{z}/{x}/{y}.png" attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors' eventHandlers={{ tileerror: () => setTileError(true) }} /><Fit points={points} /><Heat points={data.amenities || []} enabled={mode === 'heat'} />{points.map(p => <CircleMarker key={p.id} center={[p.lat, p.lng]} radius={mini ? 9 : 8} pathOptions={{ color: '#fff', weight: 2, fillOpacity: .95, fillColor: mode === 'score' ? (p.amenity_score == null ? '#87938e' : p.amenity_score >= 60 ? '#0c806a' : p.amenity_score >= 30 ? '#dba949' : '#b46c57') : (p.total_price_npr == null ? '#87938e' : p.total_price_npr < 15000000 ? '#0c806a' : p.total_price_npr < 30000000 ? '#dba949' : '#b46c57') }}><Popup><b>{p.title}</b><p>{money(p.total_price_npr ?? p.price_npr)}</p><small>{p.geocode_precision || 'Approximate location'}</small>{onSelect && <button className="popup-button" onClick={() => onSelect(p.id)}>View property details</button>}</Popup></CircleMarker>)}{mini && (data.amenities || []).map(a => <CircleMarker key={a.id} center={[a.lat, a.lng]} radius={4} pathOptions={{ color: '#567aa1' }}><Popup>{a.name}<br />{a.kind} · {km(a.distance_km)}</Popup></CircleMarker>)}</MapContainer>{tileError && <div className="tile-warning">Map tiles unavailable. Listing data remains available below.</div>}</div>; }
+const api = async (url, signal) => {
+  const r = await fetch(url, { signal });
+  if (!r.ok) {
+    const t = await r.text();
+    throw new Error(`Request failed (${r.status}): ${t.slice(0, 180)}`);
+  }
+  return r.json();
+};
+const money = (n) =>
+  n == null
+    ? "Not disclosed"
+    : n >= 1e7
+      ? `NPR ${(n / 1e7).toFixed(2)} cr`
+      : `NPR ${(n / 1e5).toFixed(1)} lakh`;
+const km = (n) => (n == null ? "Unknown" : `${n.toFixed(2)} km`);
+const initial = {
+  district: "",
+  area: "",
+  ward: "",
+  property_type: "",
+  transaction: "",
+  min_price: "",
+  max_price: "",
+  school_km: "",
+  hospital_km: "",
+  radius_m: "",
+};
+function Heat({ points, enabled }) {
+  const map = useMap();
+  useEffect(() => {
+    if (!enabled) return;
+    const layer = L.heatLayer(
+      points.map((p) => [p.lat, p.lng, 0.5]),
+      {
+        radius: 28,
+        blur: 23,
+        maxZoom: 15,
+        gradient: {
+          0.2: "#bbdfb4",
+          0.5: "#f5c86c",
+          0.8: "#e88c55",
+          1: "#ba4b4b",
+        },
+      },
+    ).addTo(map);
+    return () => map.removeLayer(layer);
+  }, [map, points, enabled]);
+  return null;
+}
+function Fit({ points }) {
+  const map = useMap();
+  useEffect(() => {
+    if (points.length)
+      map.fitBounds(
+        points.map((p) => [p.lat, p.lng]),
+        { padding: [35, 35], maxZoom: 14 },
+      );
+  }, [map, points]);
+  return null;
+}
+function PropertyMap({ data, onSelect, mode = "price", mini = false }) {
+  const points = data.items.filter((p) => p.lat != null && p.lng != null);
+  const [tileError, setTileError] = useState(false);
+  return (
+    <div className={`map-shell ${mini ? "mini" : ""}`}>
+      <MapContainer
+        center={[27.705, 85.345]}
+        zoom={12}
+        scrollWheelZoom={false}
+        style={{ height: "100%", width: "100%" }}
+      >
+        <TileLayer
+          url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+          eventHandlers={{ tileerror: () => setTileError(true) }}
+        />
+        <Fit points={points} />
+        <Heat points={data.amenities || []} enabled={mode === "heat"} />
+        {points.map((p) => (
+          <CircleMarker
+            key={p.id}
+            center={[p.lat, p.lng]}
+            radius={mini ? 9 : 8}
+            pathOptions={{
+              color: "#fff",
+              weight: 2,
+              fillOpacity: 0.95,
+              fillColor:
+                mode === "score"
+                  ? p.amenity_score == null
+                    ? "#87938e"
+                    : p.amenity_score >= 60
+                      ? "#0c806a"
+                      : p.amenity_score >= 30
+                        ? "#dba949"
+                        : "#b46c57"
+                  : p.total_price_npr == null
+                    ? "#87938e"
+                    : p.total_price_npr < 15000000
+                      ? "#0c806a"
+                      : p.total_price_npr < 30000000
+                        ? "#dba949"
+                        : "#b46c57",
+            }}
+          >
+            <Popup>
+              <b>{p.title}</b>
+              <p>{money(p.total_price_npr ?? p.price_npr)}</p>
+              <small>{p.geocode_precision || "Approximate location"}</small>
+              {onSelect && (
+                <button className="popup-button" onClick={() => onSelect(p.id)}>
+                  View property details
+                </button>
+              )}
+            </Popup>
+          </CircleMarker>
+        ))}
+        {mini &&
+          (data.amenities || []).map((a) => (
+            <CircleMarker
+              key={a.id}
+              center={[a.lat, a.lng]}
+              radius={4}
+              pathOptions={{ color: "#567aa1" }}
+            >
+              <Popup>
+                {a.name}
+                <br />
+                {a.kind} · {km(a.distance_km)}
+              </Popup>
+            </CircleMarker>
+          ))}
+      </MapContainer>
+      {tileError && (
+        <div className="tile-warning">
+          Map tiles unavailable. Listing data remains available below.
+        </div>
+      )}
+    </div>
+  );
+}
 
-function Detail({ id, onClose }) { const [record, setRecord] = useState(null), [error, setError] = useState(''); const ref = useRef(null); useEffect(() => { const controller = new AbortController(); api(`/api/properties/${id}`, controller.signal).then(setRecord).catch(e => { if (e.name !== 'AbortError') setError(e.message); }); return () => controller.abort(); }, [id]); useEffect(() => { ref.current?.showModal(); return () => ref.current?.close(); }, []); return <dialog ref={ref} className="detail-dialog" onCancel={onClose} onClick={e => { if (e.target === ref.current) onClose(); }}><div className="detail-head"><span className="eyebrow">PROPERTY INTELLIGENCE</span><button aria-label="Close details" className="icon-button" onClick={onClose}><X size={21} /></button></div>{error ? <p role="alert">{error}</p> : !record ? <p>Loading property…</p> : <><h2>{record.title}</h2><p className="muted"><MapPin size={15} /> {record.address}</p>{record.is_demo === 1 && <div className="demo-banner">Synthetic demo property. Prices and facilities are examples.</div>}<div className="detail-price">{money(record.total_price_npr ?? record.price_npr)}</div><p className="muted">Source price: {record.price_raw || 'Not disclosed'} · {record.price_basis.replaceAll('_', ' ')}</p><dl className="detail-grid"><div><dt>Property type</dt><dd>{record.property_type}</dd></div><div><dt>Size</dt><dd>{record.size || 'Unknown'}</dd></div><div><dt>Listed</dt><dd>{record.listing_date || record.listing_date_raw || 'Unavailable'}</dd></div><div><dt>Collected</dt><dd>{new Date(record.scraped_date).toLocaleDateString()}</dd></div><div><dt>Location accuracy</dt><dd>{record.geocode_precision || record.geocode_status}</dd></div><div><dt>Amenities checked</dt><dd>{record.enrichment_status} {record.enrichment_radius_m ? `· ${record.enrichment_radius_m} m` : ''}</dd></div></dl>{record.lat != null ? <PropertyMap mini data={{ items: [record], amenities: record.amenities }} /> : <div className="empty small-empty">Location has not been resolved. This property is excluded from the map.</div>}<h3>Nearby facilities</h3><p className="caption">Straight-line distances from the geocoded point, not walking distances. Road distance is to the nearest mapped segment. OSM coverage may be incomplete.</p>{record.amenities.length ? <div className="facilities">{record.amenities.map(a => <div key={a.id}><span>{a.kind === 'school' ? <School size={17} /> : a.kind === 'hospital' ? <Hospital size={17} /> : <MapPin size={17} />}<span>{a.name}<small>{a.kind}</small></span></span><b>{km(a.distance_km)}</b></div>)}</div> : <p>No facilities recorded. This does not prove there are none nearby.</p>}<h3>Road access</h3><p>{record.road_access_note || 'No source-reported access information.'}</p>{record.geo_error && <p className="error">{record.geo_error}</p>}<ul className="quality">{record.quality_flags.map((flag, i) => <li key={i}>{flag}</li>)}</ul>{/^https:\/\//.test(record.source_url) && <a className="button" href={record.source_url} target="_blank" rel="noreferrer">Original listing <ArrowUpRight size={16} /></a>}<p className="caption">Source: {record.source}. Water supply reliability has not been verified.</p></>}</dialog>; }
+function Detail({ id, onClose }) {
+  const [record, setRecord] = useState(null),
+    [error, setError] = useState("");
+  const ref = useRef(null);
+  useEffect(() => {
+    const controller = new AbortController();
+    api(`/api/properties/${id}`, controller.signal)
+      .then(setRecord)
+      .catch((e) => {
+        if (e.name !== "AbortError") setError(e.message);
+      });
+    return () => controller.abort();
+  }, [id]);
+  useEffect(() => {
+    ref.current?.showModal();
+    return () => ref.current?.close();
+  }, []);
+  return (
+    <dialog
+      ref={ref}
+      className="detail-dialog"
+      onCancel={onClose}
+      onClick={(e) => {
+        if (e.target === ref.current) onClose();
+      }}
+    >
+      <div className="detail-head">
+        <span className="eyebrow">PROPERTY INTELLIGENCE</span>
+        <button
+          aria-label="Close details"
+          className="icon-button"
+          onClick={onClose}
+        >
+          <X size={21} />
+        </button>
+      </div>
+      {error ? (
+        <p role="alert">{error}</p>
+      ) : !record ? (
+        <p>Loading property…</p>
+      ) : (
+        <>
+          <h2>{record.title}</h2>
+          <p className="muted">
+            <MapPin size={15} /> {record.address}
+          </p>
+          {record.is_demo === 1 && (
+            <div className="demo-banner">
+              Synthetic demo property. Prices and facilities are examples.
+            </div>
+          )}
+          <div className="detail-price">
+            {money(record.total_price_npr ?? record.price_npr)}
+          </div>
+          <p className="muted">
+            Source price: {record.price_raw || "Not disclosed"} ·{" "}
+            {record.price_basis.replaceAll("_", " ")}
+          </p>
+          <dl className="detail-grid">
+            <div>
+              <dt>Property type</dt>
+              <dd>{record.property_type}</dd>
+            </div>
+            <div>
+              <dt>Size</dt>
+              <dd>{record.size || "Unknown"}</dd>
+            </div>
+            <div>
+              <dt>Listed</dt>
+              <dd>
+                {record.listing_date ||
+                  record.listing_date_raw ||
+                  "Unavailable"}
+              </dd>
+            </div>
+            <div>
+              <dt>Collected</dt>
+              <dd>{new Date(record.scraped_date).toLocaleDateString()}</dd>
+            </div>
+            <div>
+              <dt>Location accuracy</dt>
+              <dd>{record.geocode_precision || record.geocode_status}</dd>
+            </div>
+            <div>
+              <dt>Amenities checked</dt>
+              <dd>
+                {record.enrichment_status}{" "}
+                {record.enrichment_radius_m
+                  ? `· ${record.enrichment_radius_m} m`
+                  : ""}
+              </dd>
+            </div>
+          </dl>
+          {record.lat != null ? (
+            <PropertyMap
+              mini
+              data={{ items: [record], amenities: record.amenities }}
+            />
+          ) : (
+            <div className="empty small-empty">
+              Location has not been resolved. This property is excluded from the
+              map.
+            </div>
+          )}
+          <h3>Nearby facilities</h3>
+          <p className="caption">
+            Straight-line distances from the geocoded point, not walking
+            distances. Road distance is to the nearest mapped segment. OSM
+            coverage may be incomplete.
+          </p>
+          {record.amenities.length ? (
+            <div className="facilities">
+              {record.amenities.map((a) => (
+                <div key={a.id}>
+                  <span>
+                    {a.kind === "school" ? (
+                      <School size={17} />
+                    ) : a.kind === "hospital" ? (
+                      <Hospital size={17} />
+                    ) : (
+                      <MapPin size={17} />
+                    )}
+                    <span>
+                      {a.name}
+                      <small>{a.kind}</small>
+                    </span>
+                  </span>
+                  <b>{km(a.distance_km)}</b>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p>
+              No facilities recorded. This does not prove there are none nearby.
+            </p>
+          )}
+          <h3>Road access</h3>
+          <p>
+            {record.road_access_note ||
+              "No source-reported access information."}
+          </p>
+          {record.geo_error && <p className="error">{record.geo_error}</p>}
+          <ul className="quality">
+            {record.quality_flags.map((flag, i) => (
+              <li key={i}>{flag}</li>
+            ))}
+          </ul>
+          {/^https:\/\//.test(record.source_url) && (
+            <a
+              className="button"
+              href={record.source_url}
+              target="_blank"
+              rel="noreferrer"
+            >
+              Original listing <ArrowUpRight size={16} />
+            </a>
+          )}
+          <p className="caption">
+            Source: {record.source}. Water supply reliability has not been
+            verified.
+          </p>
+        </>
+      )}
+    </dialog>
+  );
+}
+
+function PropertyCard({ property, onSelect }) {
+  const PropertyIcon = property.property_type === "land" ? LandPlot : Building2;
+  const price = property.total_price_npr ?? property.price_npr;
+  return (
+    <article className="property-card">
+      <button
+        className="property-card-main"
+        onClick={() => onSelect(property.id)}
+        aria-label={`View ${property.title}`}
+      >
+        <div className={`property-card-visual ${property.property_type}`}>
+          <PropertyIcon size={38} />
+          <span>No approved property photo</span>
+          <b>
+            {property.transaction_type === "rent" ? "For rent" : "For sale"}
+          </b>
+        </div>
+        <div className="property-card-copy">
+          <div className="property-card-location">
+            <MapPin size={14} />
+            <span>
+              {property.area_name}, {property.district}
+            </span>
+          </div>
+          <h3>{property.title}</h3>
+          <div className="property-card-facts">
+            <span>
+              <PropertyIcon size={15} />
+              {property.property_type}
+            </span>
+            <span>{property.size || "Size unavailable"}</span>
+          </div>
+          <div className="property-card-price">
+            <small>Asking price</small>
+            <strong>{money(price)}</strong>
+            <span>
+              {property.price_basis.startsWith("per_") &&
+              property.total_price_npr != null
+                ? "Calculated total"
+                : property.price_basis.replaceAll("_", " ")}
+            </span>
+          </div>
+          <div className="property-card-nearby">
+            <span>
+              <School size={15} />
+              {km(property.school_distance_km)}
+            </span>
+            <span>
+              <Hospital size={15} />
+              {km(property.hospital_distance_km)}
+            </span>
+          </div>
+          <div className="property-card-footer">
+            <span className="tag">{property.source}</span>
+            <small>
+              Collected {new Date(property.scraped_date).toLocaleDateString()}
+            </small>
+            <span className="card-details">
+              View details <ArrowUpRight size={15} />
+            </span>
+          </div>
+        </div>
+      </button>
+    </article>
+  );
+}
 
 function App() {
-    const [dataset, setDataset] = useState('live'), [filters, setFilters] = useState(initial), [draft, setDraft] = useState(initial), [page, setPage] = useState(1), [sort, setSort] = useState('newest'), [view, setView] = useState('explore'), [mode, setMode] = useState('price'), [selected, setSelected] = useState(null), [options, setOptions] = useState({ districts: [], areas: [], wards: [], radii: [] }), [data, setData] = useState(null), [error, setError] = useState(''), [loading, setLoading] = useState(true), [refresh, setRefresh] = useState(0), [formError, setFormError] = useState('');
-    const params = new URLSearchParams({ dataset, ...Object.fromEntries(Object.entries(filters).filter(([, v]) => v !== '')) }).toString();
-    useEffect(() => { const c = new AbortController(); api('/api/options?dataset=' + dataset, c.signal).then(setOptions).catch(e => { if (e.name !== 'AbortError') setError(e.message); }); return () => c.abort(); }, [dataset, refresh]);
-    useEffect(() => { const c = new AbortController(); setLoading(true); setError(''); Promise.all([api(`/api/properties?${params}&page=${page}&sort=${sort}`, c.signal), api('/api/summary?' + params, c.signal), api('/api/map?' + params, c.signal), api('/api/sources', c.signal)]).then(([table, summary, map, sources]) => setData({ table, summary, map, sources })).catch(e => { if (e.name !== 'AbortError') setError(e.message); }).finally(() => { if (!c.signal.aborted) setLoading(false); }); return () => c.abort(); }, [params, page, sort, refresh]);
-    function switchDataset(value) { setDataset(value); setFilters(initial); setDraft(initial); setPage(1); setData(null); }
-    function apply(e) { e.preventDefault(); if (draft.min_price !== '' && draft.max_price !== '' && Number(draft.min_price) > Number(draft.max_price)) { setFormError('Minimum price must not exceed maximum price.'); return; } setFormError(''); setFilters(draft); setPage(1); }
-    function selectFilter(key, label, values) { return <label>{label}<select value={draft[key]} onChange={e => setDraft({ ...draft, [key]: e.target.value })}><option value="">All {label.toLowerCase()}</option>{values.map(v => <option key={v} value={v}>{v}</option>)}</select></label>; }
-    return <div className="app"><aside className="sidebar"><a className="brand" href="#"><span className="brand-icon"><LandPlot size={23} /></span><span>Land<span className="brand-light">Discover</span><small>VALLEY INTELLIGENCE</small></span></a><div className="workspace-label">WORKSPACE</div><button className={`nav-item ${view === 'explore' ? 'active' : ''}`} onClick={() => setView('explore')}><Map size={19} /> Property explorer</button><button className={`nav-item ${view === 'sources' ? 'active' : ''}`} onClick={() => setView('sources')}><Database size={19} /> Data sources</button><div className="sidebar-bottom"><div className="valley-symbol"><Compass size={27} /></div><b>One valley.<br />A clearer perspective.</b><p>Kathmandu · Lalitpur<br />Bhaktapur</p><span>OpenStreetMap powered</span></div></aside><div className="main"><header className="topbar"><div><span className="breadcrumb">Workspace /</span> {view === 'explore' ? 'Property explorer' : 'Data sources'}</div><div className="top-actions"><label className="dataset-switch">Dataset<select aria-label="Dataset" value={dataset} onChange={e => switchDataset(e.target.value)}><option value="demo">Demo data</option><option value="live">Collected data</option></select></label><button className="icon-button" aria-label="Refresh data" onClick={() => setRefresh(x => x + 1)}><RefreshCw size={18} /></button></div></header><main><div className="page-heading"><div><div className="eyebrow">KATHMANDU VALLEY</div><h1>{view === 'explore' ? 'See the place. Understand the price.' : 'Know where your data comes from.'}</h1><p>{view === 'explore' ? 'Explore property asking prices and the everyday places around them.' : 'Source access, collection history, and validation status in one place.'}</p></div>{view === 'explore' && <a className="button secondary" href={'/api/export.csv?' + params}><Download size={17} /> Export CSV</a>}</div>{dataset === 'demo' && <div className="demo-banner"><Info size={16} /><span><b>Demo workspace</b> · Synthetic listings and amenities for exploring the dashboard. These are not real offers or market evidence.</span><button onClick={() => switchDataset('live')}>View collected data <ArrowUpRight size={14} /></button></div>}{error && <div className="error" role="alert">{error}<button onClick={() => setRefresh(x => x + 1)}>Retry</button></div>}{view === 'sources' ? <><div className="sources-grid">{(data?.sources.sources || []).map(s => <article className="source-card" key={s.id}><div><Database size={22} /><span className="tag">{s.status.replaceAll('_', ' ')}</span></div><h2>{s.name}</h2><p>{s.reason}</p>{s.terms_url && <a href={s.terms_url} target="_blank" rel="noreferrer">Review source rules <ArrowUpRight size={14} /></a>}</article>)}</div><section className="panel"><h2>Collection history</h2>{data?.sources.runs.length ? <div className="table-scroll"><table><thead><tr><th>Source</th><th>Started</th><th>Status</th><th>Imported</th><th>Rejected</th><th>Notes</th></tr></thead><tbody>{data.sources.runs.map(r => <tr key={r.id}><td>{r.source}</td><td>{new Date(r.started_at).toLocaleString()}</td><td>{r.status}</td><td>{r.imported}</td><td>{r.rejected}</td><td>{JSON.parse(r.errors).map(e => e.message).join('; ') || '—'}</td></tr>)}</tbody></table></div> : <p>No collection runs yet. Run the collection CLI after source validation.</p>}</section></> : <><section className="stats"><Stat title="Properties in view" value={data?.summary.total ?? '—'} note="Across your current filters" icon={<Building2 />} /><Stat title="Median asking price" value={money(data?.summary.median_asking_price)} note={`${data?.summary.priced_count || 0} sale listings with known totals`} icon={<LandPlot />} /><Stat title="Located on the map" value={data?.summary.mapped ?? '—'} note="Approximate geocoded locations" icon={<MapPin />} /><Stat title="Amenity-enriched" value={data?.summary.enriched ?? '—'} note="With a completed facility search" icon={<School />} /></section><form className="panel filters" onSubmit={apply}><div className="filter-title"><SlidersHorizontal size={17} /><b>Refine your search</b><button type="button" className="plain" onClick={() => { setDraft(initial); setFilters(initial); setPage(1); setFormError(''); }}>Reset filters</button></div><div className="filter-grid">{selectFilter('district', 'District', options.districts)}{selectFilter('area', 'Area', options.areas)}{selectFilter('ward', 'Ward', options.wards)}{selectFilter('property_type', 'Property type', ['land', 'house', 'apartment'])}<label>Transaction<select value={draft.transaction} onChange={e => setDraft({ ...draft, transaction: e.target.value })}><option value="sale">For sale</option><option value="rent">For rent</option><option value="unknown">Unknown</option><option value="">All transactions</option></select></label><label>Min total price (NPR)<input type="number" min="0" placeholder="No minimum" value={draft.min_price} onChange={e => setDraft({ ...draft, min_price: e.target.value })} /></label><label>Max total price (NPR)<input type="number" min="0" placeholder="No maximum" value={draft.max_price} onChange={e => setDraft({ ...draft, max_price: e.target.value })} /></label><label>School within<select value={draft.school_km} onChange={e => setDraft({ ...draft, school_km: e.target.value })}><option value="">Any / unknown</option>{[.5, 1, 1.5, 2].map(n => <option value={n} key={n}>{n} km</option>)}</select></label><label>Hospital within<select value={draft.hospital_km} onChange={e => setDraft({ ...draft, hospital_km: e.target.value })}><option value="">Any / unknown</option>{[.5, 1, 1.5, 2].map(n => <option value={n} key={n}>{n} km</option>)}</select></label><label>Search radius<select value={draft.radius_m} onChange={e => setDraft({ ...draft, radius_m: e.target.value })}><option value="">All recorded radii</option>{options.radii.map(r => <option value={r} key={r}>{r} m</option>)}</select></label><button className="button filter-button" type="submit"><Search size={17} /> Apply filters</button></div>{formError && <p className="error" role="alert">{formError}</p>}<p className="caption">Price filters use total asking prices. Unknown totals are excluded when a price limit is set. Proximity filters use completed enrichment only.</p></form><div className="explorer-grid"><section className="panel map-panel"><div className="panel-header"><div><h2>The valley, at a glance</h2><p>{data?.map.mapped_total || 0} mapped properties {data?.map.truncated ? '· showing first 3,000' : ''}</p></div><label className="map-mode"><Layers3 size={15} /><select aria-label="Map layer" value={mode} onChange={e => setMode(e.target.value)}><option value="price">Asking price</option><option value="score">Amenity proximity</option><option value="heat">Amenity heatmap</option></select></label></div>{data && <PropertyMap data={data.map} onSelect={setSelected} mode={mode} />}<div className="legend">{mode === 'price' ? <><span><i className="green" /> Below NPR 1.5 cr</span><span><i className="gold" /> 1.5–3 cr</span><span><i className="rust" /> 3 cr+</span><span><i className="grey" /> Unknown</span></> : mode === 'score' ? <><span><i className="green" /> 60–100</span><span><i className="gold" /> 30–59</span><span><i className="rust" /> Below 30</span><span><i className="grey" /> Not enriched</span></> : <span>Density of unique recorded facility points · up to 10,000 points</span>}</div></section><section className="panel chart-panel"><div className="panel-header"><div><h2>Land price by area</h2><p>Median asking price per aana</p></div></div>{data?.summary.price_by_area.length ? <div className="bar-chart">{data.summary.price_by_area.map(a => <div className="bar-row" key={a.area}><div><span>{a.area}</span><b>{(a.median_per_aana / 1e5).toFixed(1)} L</b></div><div className="bar-track"><div style={{ width: `${a.median_per_aana / Math.max(...data.summary.price_by_area.map(x => x.median_per_aana)) * 100}%` }} /></div><small>{a.count} listing{a.count !== 1 ? 's' : ''}</small></div>)}</div> : <div className="empty small-empty">No comparable land prices in this selection.</div>}<div className="chart-foot"><Info size={15} /><p>Land sale listings with a known size and total price only. Asking prices are not completed sale prices. Small samples may not represent an area.</p></div></section></div><section className="panel results"><div className="panel-header"><div><h2>Explore the listings <span className="count">{data?.table.total || 0}</span></h2><p>Compare the details before you decide.</p></div><label>Sort by <select aria-label="Sort listings" value={sort} onChange={e => { setSort(e.target.value); setPage(1); }}><option value="newest">Recently collected</option><option value="price_asc">Price: low to high</option><option value="price_desc">Price: high to low</option></select></label></div>{loading && <div className="loading" role="status">Updating results…</div>}{!loading && data?.table.items.length === 0 ? <div className="empty"><Search size={28} /><h3>No properties in this selection</h3><p>{dataset === 'live' ? 'Import a permitted dataset or complete source validation before collecting listings.' : 'Try clearing a few filters to see more properties.'}</p></div> : <div className="table-scroll"><table><thead><tr><th>Property / location</th><th>Type / size</th><th>Asking price</th><th>School</th><th>Hospital</th><th>Source</th><th><span className="sr-only">Details</span></th></tr></thead><tbody>{data?.table.items.map(p => <tr key={p.id}><td><button className="property-link" onClick={() => setSelected(p.id)}>{p.area_name}<ArrowUpRight size={14} /></button><small>{p.district} {p.ward ? `· Ward ${p.ward}` : ''}</small></td><td><span className="type-label">{p.property_type}</span><small>{p.size || 'Size unknown'}</small></td><td><b>{money(p.total_price_npr ?? p.price_npr)}</b><small>{p.price_basis.startsWith('per_') && p.total_price_npr != null ? 'Calculated total' : p.price_basis.replaceAll('_', ' ')} · {p.transaction_type}</small></td><td>{km(p.school_distance_km)}</td><td>{km(p.hospital_distance_km)}</td><td><span className="tag">{p.source}</span><small>{new Date(p.scraped_date).toLocaleDateString()}</small></td><td><button className="icon-button" aria-label={`View ${p.title}`} onClick={() => setSelected(p.id)}><ArrowUpRight size={17} /></button></td></tr>)}</tbody></table></div>}<div className="pagination"><span>{data?.table.total || 0} results · page {page} of {Math.max(1, Math.ceil((data?.table.total || 0) / 25))}</span><div><button aria-label="Previous page" disabled={page === 1 || loading} onClick={() => setPage(x => x - 1)}><ChevronLeft size={17} /></button><button aria-label="Next page" disabled={page * 25 >= (data?.table.total || 0) || loading} onClick={() => setPage(x => x + 1)}><ChevronRight size={17} /></button></div></div></section><p className="method-note">Amenity proximity is a transparent 0–100 index: school and hospital each contribute up to 50 points, decreasing linearly to zero at the recorded search radius. Compare scores only at the same radius. It is not a property valuation. Facilities: © OpenStreetMap contributors, ODbL.</p></>}<footer>Land Discover <span>Better information. Better property decisions.</span></footer></main></div>{selected != null && <Detail id={selected} onClose={() => setSelected(null)} />}</div>;
+  const [dataset, setDataset] = useState("live"),
+    [filters, setFilters] = useState(initial),
+    [draft, setDraft] = useState(initial),
+    [page, setPage] = useState(1),
+    [sort, setSort] = useState("newest"),
+    [view, setView] = useState("explore"),
+    [mode, setMode] = useState("price"),
+    [selected, setSelected] = useState(null),
+    [options, setOptions] = useState({
+      districts: [],
+      areas: [],
+      wards: [],
+      radii: [],
+    }),
+    [data, setData] = useState(null),
+    [error, setError] = useState(""),
+    [loading, setLoading] = useState(true),
+    [refresh, setRefresh] = useState(0),
+    [formError, setFormError] = useState("");
+  const params = new URLSearchParams({
+    dataset,
+    ...Object.fromEntries(Object.entries(filters).filter(([, v]) => v !== "")),
+  }).toString();
+  useEffect(() => {
+    const c = new AbortController();
+    api("/api/options?dataset=" + dataset, c.signal)
+      .then(setOptions)
+      .catch((e) => {
+        if (e.name !== "AbortError") setError(e.message);
+      });
+    return () => c.abort();
+  }, [dataset, refresh]);
+  useEffect(() => {
+    const c = new AbortController();
+    setLoading(true);
+    setError("");
+    Promise.all([
+      api(`/api/properties?${params}&page=${page}&sort=${sort}`, c.signal),
+      api("/api/summary?" + params, c.signal),
+      api("/api/map?" + params, c.signal),
+      api("/api/sources", c.signal),
+    ])
+      .then(([table, summary, map, sources]) =>
+        setData({ table, summary, map, sources }),
+      )
+      .catch((e) => {
+        if (e.name !== "AbortError") setError(e.message);
+      })
+      .finally(() => {
+        if (!c.signal.aborted) setLoading(false);
+      });
+    return () => c.abort();
+  }, [params, page, sort, refresh]);
+  function switchDataset(value) {
+    setDataset(value);
+    setFilters(initial);
+    setDraft(initial);
+    setPage(1);
+    setData(null);
+  }
+  function apply(e) {
+    e.preventDefault();
+    if (
+      draft.min_price !== "" &&
+      draft.max_price !== "" &&
+      Number(draft.min_price) > Number(draft.max_price)
+    ) {
+      setFormError("Minimum price must not exceed maximum price.");
+      return;
+    }
+    setFormError("");
+    setFilters(draft);
+    setPage(1);
+  }
+  function selectFilter(key, label, values) {
+    return (
+      <label>
+        {label}
+        <select
+          value={draft[key]}
+          onChange={(e) => setDraft({ ...draft, [key]: e.target.value })}
+        >
+          <option value="">All {label.toLowerCase()}</option>
+          {values.map((v) => (
+            <option key={v} value={v}>
+              {v}
+            </option>
+          ))}
+        </select>
+      </label>
+    );
+  }
+  return (
+    <div className="app">
+      <aside className="sidebar">
+        <a className="brand" href="#">
+          <span className="brand-icon">
+            <LandPlot size={23} />
+          </span>
+          <span>
+            Land<span className="brand-light">Discover</span>
+            <small>VALLEY INTELLIGENCE</small>
+          </span>
+        </a>
+        <div className="workspace-label">WORKSPACE</div>
+        <button
+          className={`nav-item ${view === "explore" ? "active" : ""}`}
+          onClick={() => setView("explore")}
+        >
+          <Map size={19} /> Property explorer
+        </button>
+        <button
+          className={`nav-item ${view === "sources" ? "active" : ""}`}
+          onClick={() => setView("sources")}
+        >
+          <Database size={19} /> Data sources
+        </button>
+        <div className="sidebar-bottom">
+          <div className="valley-symbol">
+            <Compass size={27} />
+          </div>
+          <b>
+            One valley.
+            <br />A clearer perspective.
+          </b>
+          <p>
+            Kathmandu · Lalitpur
+            <br />
+            Bhaktapur
+          </p>
+          <span>OpenStreetMap powered</span>
+        </div>
+      </aside>
+      <div className="main">
+        <header className="topbar">
+          <div>
+            <span className="breadcrumb">Workspace /</span>{" "}
+            {view === "explore" ? "Property explorer" : "Data sources"}
+          </div>
+          <div className="top-actions">
+            <label className="dataset-switch">
+              Dataset
+              <select
+                aria-label="Dataset"
+                value={dataset}
+                onChange={(e) => switchDataset(e.target.value)}
+              >
+                <option value="demo">Demo data</option>
+                <option value="live">Collected data</option>
+              </select>
+            </label>
+            <button
+              className="icon-button"
+              aria-label="Refresh data"
+              onClick={() => setRefresh((x) => x + 1)}
+            >
+              <RefreshCw size={18} />
+            </button>
+          </div>
+        </header>
+        <main>
+          <div className="page-heading">
+            <div>
+              <div className="eyebrow">KATHMANDU VALLEY</div>
+              <h1>
+                {view === "explore"
+                  ? "See the place. Understand the price."
+                  : "Know where your data comes from."}
+              </h1>
+              <p>
+                {view === "explore"
+                  ? "Explore property asking prices and the everyday places around them."
+                  : "Source access, collection history, and validation status in one place."}
+              </p>
+            </div>
+            {view === "explore" && (
+              <a
+                className="button secondary"
+                href={"/api/export.csv?" + params}
+              >
+                <Download size={17} /> Export CSV
+              </a>
+            )}
+          </div>
+          {dataset === "demo" && (
+            <div className="demo-banner">
+              <Info size={16} />
+              <span>
+                <b>Demo workspace</b> · Synthetic listings and amenities for
+                exploring the dashboard. These are not real offers or market
+                evidence.
+              </span>
+              <button onClick={() => switchDataset("live")}>
+                View collected data <ArrowUpRight size={14} />
+              </button>
+            </div>
+          )}
+          {error && (
+            <div className="error" role="alert">
+              {error}
+              <button onClick={() => setRefresh((x) => x + 1)}>Retry</button>
+            </div>
+          )}
+          {view === "sources" ? (
+            <>
+              <div className="sources-grid">
+                {(data?.sources.sources || []).map((s) => (
+                  <article className="source-card" key={s.id}>
+                    <div>
+                      <Database size={22} />
+                      <span className="tag">
+                        {s.status.replaceAll("_", " ")}
+                      </span>
+                    </div>
+                    <h2>{s.name}</h2>
+                    <p>{s.reason}</p>
+                    {s.terms_url && (
+                      <a href={s.terms_url} target="_blank" rel="noreferrer">
+                        Review source rules <ArrowUpRight size={14} />
+                      </a>
+                    )}
+                  </article>
+                ))}
+              </div>
+              <section className="panel">
+                <h2>Collection history</h2>
+                {data?.sources.runs.length ? (
+                  <div className="table-scroll">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Source</th>
+                          <th>Started</th>
+                          <th>Status</th>
+                          <th>Imported</th>
+                          <th>Rejected</th>
+                          <th>Notes</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {data.sources.runs.map((r) => (
+                          <tr key={r.id}>
+                            <td>{r.source}</td>
+                            <td>{new Date(r.started_at).toLocaleString()}</td>
+                            <td>{r.status}</td>
+                            <td>{r.imported}</td>
+                            <td>{r.rejected}</td>
+                            <td>
+                              {JSON.parse(r.errors)
+                                .map((e) => e.message)
+                                .join("; ") || "—"}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <p>
+                    No collection runs yet. Run the collection CLI after source
+                    validation.
+                  </p>
+                )}
+              </section>
+            </>
+          ) : (
+            <>
+              <section className="stats">
+                <Stat
+                  title="Properties in view"
+                  value={data?.summary.total ?? "—"}
+                  note="Across your current filters"
+                  icon={<Building2 />}
+                />
+                <Stat
+                  title="Median asking price"
+                  value={money(data?.summary.median_asking_price)}
+                  note={`${data?.summary.priced_count || 0} sale listings with known totals`}
+                  icon={<LandPlot />}
+                />
+                <Stat
+                  title="Located on the map"
+                  value={data?.summary.mapped ?? "—"}
+                  note="Approximate geocoded locations"
+                  icon={<MapPin />}
+                />
+                <Stat
+                  title="Amenity-enriched"
+                  value={data?.summary.enriched ?? "—"}
+                  note="With a completed facility search"
+                  icon={<School />}
+                />
+              </section>
+              <form className="panel filters" onSubmit={apply}>
+                <div className="filter-title">
+                  <SlidersHorizontal size={17} />
+                  <b>Refine your search</b>
+                  <button
+                    type="button"
+                    className="plain"
+                    onClick={() => {
+                      setDraft(initial);
+                      setFilters(initial);
+                      setPage(1);
+                      setFormError("");
+                    }}
+                  >
+                    Reset filters
+                  </button>
+                </div>
+                <div className="filter-grid">
+                  {selectFilter("district", "District", options.districts)}
+                  {selectFilter("area", "Area", options.areas)}
+                  {selectFilter("ward", "Ward", options.wards)}
+                  {selectFilter("property_type", "Property type", [
+                    "land",
+                    "house",
+                    "apartment",
+                  ])}
+                  <label>
+                    Transaction
+                    <select
+                      value={draft.transaction}
+                      onChange={(e) =>
+                        setDraft({ ...draft, transaction: e.target.value })
+                      }
+                    >
+                      <option value="sale">For sale</option>
+                      <option value="rent">For rent</option>
+                      <option value="unknown">Unknown</option>
+                      <option value="">All transactions</option>
+                    </select>
+                  </label>
+                  <label>
+                    Min total price (NPR)
+                    <input
+                      type="number"
+                      min="0"
+                      placeholder="No minimum"
+                      value={draft.min_price}
+                      onChange={(e) =>
+                        setDraft({ ...draft, min_price: e.target.value })
+                      }
+                    />
+                  </label>
+                  <label>
+                    Max total price (NPR)
+                    <input
+                      type="number"
+                      min="0"
+                      placeholder="No maximum"
+                      value={draft.max_price}
+                      onChange={(e) =>
+                        setDraft({ ...draft, max_price: e.target.value })
+                      }
+                    />
+                  </label>
+                  <label>
+                    School within
+                    <select
+                      value={draft.school_km}
+                      onChange={(e) =>
+                        setDraft({ ...draft, school_km: e.target.value })
+                      }
+                    >
+                      <option value="">Any / unknown</option>
+                      {[0.5, 1, 1.5, 2].map((n) => (
+                        <option value={n} key={n}>
+                          {n} km
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    Hospital within
+                    <select
+                      value={draft.hospital_km}
+                      onChange={(e) =>
+                        setDraft({ ...draft, hospital_km: e.target.value })
+                      }
+                    >
+                      <option value="">Any / unknown</option>
+                      {[0.5, 1, 1.5, 2].map((n) => (
+                        <option value={n} key={n}>
+                          {n} km
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    Search radius
+                    <select
+                      value={draft.radius_m}
+                      onChange={(e) =>
+                        setDraft({ ...draft, radius_m: e.target.value })
+                      }
+                    >
+                      <option value="">All recorded radii</option>
+                      {options.radii.map((r) => (
+                        <option value={r} key={r}>
+                          {r} m
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <button className="button filter-button" type="submit">
+                    <Search size={17} /> Apply filters
+                  </button>
+                </div>
+                {formError && (
+                  <p className="error" role="alert">
+                    {formError}
+                  </p>
+                )}
+                <p className="caption">
+                  Price filters use total asking prices. Unknown totals are
+                  excluded when a price limit is set. Proximity filters use
+                  completed enrichment only.
+                </p>
+              </form>
+              <div className="explorer-grid">
+                <section className="panel map-panel">
+                  <div className="panel-header">
+                    <div>
+                      <h2>The valley, at a glance</h2>
+                      <p>
+                        {data?.map.mapped_total || 0} mapped properties{" "}
+                        {data?.map.truncated ? "· showing first 3,000" : ""}
+                      </p>
+                    </div>
+                    <label className="map-mode">
+                      <Layers3 size={15} />
+                      <select
+                        aria-label="Map layer"
+                        value={mode}
+                        onChange={(e) => setMode(e.target.value)}
+                      >
+                        <option value="price">Asking price</option>
+                        <option value="score">Amenity proximity</option>
+                        <option value="heat">Amenity heatmap</option>
+                      </select>
+                    </label>
+                  </div>
+                  {data && (
+                    <PropertyMap
+                      data={data.map}
+                      onSelect={setSelected}
+                      mode={mode}
+                    />
+                  )}
+                  <div className="legend">
+                    {mode === "price" ? (
+                      <>
+                        <span>
+                          <i className="green" /> Below NPR 1.5 cr
+                        </span>
+                        <span>
+                          <i className="gold" /> 1.5–3 cr
+                        </span>
+                        <span>
+                          <i className="rust" /> 3 cr+
+                        </span>
+                        <span>
+                          <i className="grey" /> Unknown
+                        </span>
+                      </>
+                    ) : mode === "score" ? (
+                      <>
+                        <span>
+                          <i className="green" /> 60–100
+                        </span>
+                        <span>
+                          <i className="gold" /> 30–59
+                        </span>
+                        <span>
+                          <i className="rust" /> Below 30
+                        </span>
+                        <span>
+                          <i className="grey" /> Not enriched
+                        </span>
+                      </>
+                    ) : (
+                      <span>
+                        Density of unique recorded facility points · up to
+                        10,000 points
+                      </span>
+                    )}
+                  </div>
+                </section>
+                <section className="panel chart-panel">
+                  <div className="panel-header">
+                    <div>
+                      <h2>Land price by area</h2>
+                      <p>Median asking price per aana</p>
+                    </div>
+                  </div>
+                  {data?.summary.price_by_area.length ? (
+                    <div className="bar-chart">
+                      {data.summary.price_by_area.map((a) => (
+                        <div className="bar-row" key={a.area}>
+                          <div>
+                            <span>{a.area}</span>
+                            <b>{(a.median_per_aana / 1e5).toFixed(1)} L</b>
+                          </div>
+                          <div className="bar-track">
+                            <div
+                              style={{
+                                width: `${(a.median_per_aana / Math.max(...data.summary.price_by_area.map((x) => x.median_per_aana))) * 100}%`,
+                              }}
+                            />
+                          </div>
+                          <small>
+                            {a.count} listing{a.count !== 1 ? "s" : ""}
+                          </small>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="empty small-empty">
+                      No comparable land prices in this selection.
+                    </div>
+                  )}
+                  <div className="chart-foot">
+                    <Info size={15} />
+                    <p>
+                      Land sale listings with a known size and total price only.
+                      Asking prices are not completed sale prices. Small samples
+                      may not represent an area.
+                    </p>
+                  </div>
+                </section>
+              </div>
+              <section className="panel results">
+                <div className="panel-header">
+                  <div>
+                    <h2>
+                      Explore the listings{" "}
+                      <span className="count">{data?.table.total || 0}</span>
+                    </h2>
+                    <p>Compare the details before you decide.</p>
+                  </div>
+                  <label>
+                    Sort by{" "}
+                    <select
+                      aria-label="Sort listings"
+                      value={sort}
+                      onChange={(e) => {
+                        setSort(e.target.value);
+                        setPage(1);
+                      }}
+                    >
+                      <option value="newest">Recently collected</option>
+                      <option value="price_asc">Price: low to high</option>
+                      <option value="price_desc">Price: high to low</option>
+                    </select>
+                  </label>
+                </div>
+                {loading && (
+                  <div className="loading" role="status">
+                    Updating results…
+                  </div>
+                )}
+                {!loading && data?.table.items.length === 0 ? (
+                  <div className="empty">
+                    <Search size={28} />
+                    <h3>No properties in this selection</h3>
+                    <p>
+                      {dataset === "live"
+                        ? "Import a permitted dataset or complete source validation before collecting listings."
+                        : "Try clearing a few filters to see more properties."}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="property-card-grid">
+                    {data?.table.items.map((property) => (
+                      <PropertyCard
+                        key={property.id}
+                        property={property}
+                        onSelect={setSelected}
+                      />
+                    ))}
+                  </div>
+                )}
+                <div className="pagination">
+                  <span>
+                    {data?.table.total || 0} results · page {page} of{" "}
+                    {Math.max(1, Math.ceil((data?.table.total || 0) / 25))}
+                  </span>
+                  <div>
+                    <button
+                      aria-label="Previous page"
+                      disabled={page === 1 || loading}
+                      onClick={() => setPage((x) => x - 1)}
+                    >
+                      <ChevronLeft size={17} />
+                    </button>
+                    <button
+                      aria-label="Next page"
+                      disabled={
+                        page * 25 >= (data?.table.total || 0) || loading
+                      }
+                      onClick={() => setPage((x) => x + 1)}
+                    >
+                      <ChevronRight size={17} />
+                    </button>
+                  </div>
+                </div>
+              </section>
+              <p className="method-note">
+                Amenity proximity is a transparent 0–100 index: school and
+                hospital each contribute up to 50 points, decreasing linearly to
+                zero at the recorded search radius. Compare scores only at the
+                same radius. It is not a property valuation. Facilities: ©
+                OpenStreetMap contributors, ODbL.
+              </p>
+            </>
+          )}
+          <footer>
+            Land Discover{" "}
+            <span>Better information. Better property decisions.</span>
+          </footer>
+        </main>
+      </div>
+      {selected != null && (
+        <Detail id={selected} onClose={() => setSelected(null)} />
+      )}
+    </div>
+  );
 }
-function Stat({ title, value, note, icon }) { return <article className="stat"><div><span>{title}</span>{icon}</div><strong>{value}</strong><small>{note}</small></article>; }
-createRoot(document.getElementById('root')).render(<App />);
+function Stat({ title, value, note, icon }) {
+  return (
+    <article className="stat">
+      <div>
+        <span>{title}</span>
+        {icon}
+      </div>
+      <strong>{value}</strong>
+      <small>{note}</small>
+    </article>
+  );
+}
+createRoot(document.getElementById("root")).render(<App />);
