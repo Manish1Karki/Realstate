@@ -1,4 +1,5 @@
 import hashlib, json, re
+import httpx
 from datetime import date
 from urllib.parse import urljoin, urlparse, urldefrag
 from bs4 import BeautifulSoup
@@ -116,7 +117,12 @@ def review(source,client):
         from .policy import hamrobazar_terms_digest, huku_terms_digest
         age=(date.today()-date.fromisoformat(config['reviewed_on'])).days
         if not 0<=age<=30:raise AccessError('Public source review expired; review current rules again')
-        terms=client.page(config['terms_url'],config['host'])
+        try:
+            terms=client.page(config['terms_url'],config['host'])
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code==403:
+                raise AccessError(f"{config['name']} denied the public terms request (HTTP 403). Collection stopped for this run. Source approval or a supported listing feed is needed for this backend.") from exc
+            raise
         digest=huku_terms_digest(terms) if source=='huku' else hamrobazar_terms_digest(terms)
         if digest!=config['terms_sha256']:
             raise AccessError('Published terms changed; review required before collecting more listings')

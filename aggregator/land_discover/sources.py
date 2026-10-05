@@ -17,9 +17,9 @@ SOURCES = {
    'terms_url':'https://www.hukurealestate.com/terms-and-services',
    'detail_path':'/properties/','detail_pattern':r'/properties/\d+/?',
    'status':'public_html','adapter':'huku','auto_collect':True,
-   'reviewed_on':'2026-10-03',
-   'terms_sha256':'d3bc8bebc4a1ea59aeb6055c77fc5841fab76132086cfc48bfc0f07e5499b098',
-   'reason':'Public homepage and sale/rental/land details validated 2026-10-03. Collects public HTML, property photos and visible features; robots and the published terms fingerprint are checked on each run.',
+   'reviewed_on':'2026-10-05',
+   'terms_sha256':'adfe8573d4306295ab173fcce2cae01ad55f48261dcba163bb2724ec25eabaa1',
+   'reason':'Public homepage and sale/rental/land details validated 2026-10-03; public policy clauses reviewed 2026-10-05. Collects public HTML, property photos and visible features; robots and the policy fingerprint are checked on each run. Hosting-side access may be denied by the source; collection history records failures.',
  },
  'housingnepal': {
    'name':'Housing Nepal','host':'www.housingnepal.com',

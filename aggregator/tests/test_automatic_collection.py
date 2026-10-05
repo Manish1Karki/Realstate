@@ -1,10 +1,13 @@
 import json
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 from land_discover.api import app
 from land_discover import collector
 from land_discover.db import connect, upsert
-from land_discover.scraper import discover, parse_detail
+from land_discover.scraper import discover, parse_detail, scrape
+from land_discover.http import Client
+from land_discover.sources import SOURCES
 from land_discover.policy import huku_terms_digest
 
 def huku_html(transaction='Rent',kind='House',price='110000',size='5 aana'):
@@ -82,3 +85,26 @@ def test_terms_digest_ignores_navigation():
     content='<div class="prose"><h2>User-Generated Content</h2><p>Public policy.</p></div>'
     assert huku_terms_digest('<nav>First</nav>'+content)==huku_terms_digest('<nav>Second</nav>'+content)
     with pytest.raises(ValueError): huku_terms_digest('<h1>Unexpected page</h1>')
+
+def test_huku_policy_digest_ignores_contact_but_keeps_legal_changes():
+    policy='<div class="prose"><h2>User-Generated Content</h2><p>Public policy.</p><h2>Contact Us</h2><p>Email: {email}</p><h2>Additional Terms</h2><p>{terms}</p></div>'
+    first=policy.format(email='public@example.org',terms='Original clause')
+    protected=policy.format(email='<span data-cfemail="random">[email protected]</span>',terms='Original clause')
+    changed=policy.format(email='public@example.org',terms='A new restriction')
+    assert huku_terms_digest(first)==huku_terms_digest(protected)
+    assert huku_terms_digest(first)!=huku_terms_digest(changed)
+    assert huku_terms_digest(first)!=huku_terms_digest(first.replace('Public policy.','Changed content rights.'))
+
+def test_huku_403_stops_before_fetching_or_importing_properties(monkeypatch):
+    calls=[]
+    def denied(self,url,host):
+        calls.append(url)
+        request=httpx.Request('GET',url)
+        response=httpx.Response(403,request=request)
+        response.raise_for_status()
+    monkeypatch.setattr(Client,'page',denied)
+    result=scrape('huku')
+    assert calls==[SOURCES['huku']['terms_url']]
+    assert result['status']=='failed' and result['pages']==0 and result['imported']==0
+    assert 'denied the public terms request (HTTP 403)' in result['errors'][0]['message']
+    assert 'supported listing feed' in result['errors'][0]['message']

@@ -14,4 +14,14 @@ def huku_terms_digest(html):
     content=soup.select_one('.prose')
     if not content or 'User-Generated Content' not in content.get_text():
         raise ValueError('HUKU terms page structure changed; review required')
+    # The contact section can contain a Cloudflare-obfuscated email, changing
+    # between environments without a change to the actual policy clauses.
+    # Exclude only that section; retain any later policy sections as well.
+    for heading in list(content.find_all(['h1','h2','h3','h4','h5','h6'])):
+        if clean(heading.get_text(' ',strip=True)).lower()!='contact us': continue
+        level=int(heading.name[1])
+        for sibling in list(heading.next_siblings):
+            if getattr(sibling,'name',None) in ('h1','h2','h3','h4','h5','h6') and int(sibling.name[1])<=level: break
+            sibling.extract()
+        heading.extract()
     return hashlib.sha256(clean(content.get_text(' ',strip=True)).encode()).hexdigest()

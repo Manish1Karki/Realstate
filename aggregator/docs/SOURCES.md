@@ -12,8 +12,11 @@ HUKU's [robots.txt](https://www.hukurealestate.com/robots.txt) permits public
 pages and disallows `/admins/` and `/api/`. Its published
 [terms](https://www.hukurealestate.com/terms-and-services) were reviewed live;
 no explicit prohibition of bounded automated public-page access was present.
-The stable `.prose` policy content is fingerprinted and rechecked before every
-batch. This inspection does not assert a commercial redistribution license.
+The `.prose` policy clauses are fingerprinted and rechecked before every
+batch. The Contact Us section is excluded because Cloudflare can replace its
+email with an obfuscated display; subsequent policy sections are still checked.
+The clauses were reviewed again on 5 October 2026. This inspection does not
+assert a commercial redistribution license.
 Live parser checks covered rental 1560, house 1558 and land 1538. A schema
 SoldOut value can conflict with the advertised page; the adapter retains a
 quality flag for verification instead of inventing an availability state.
@@ -22,6 +25,31 @@ Both adapters keep unknown prices/units unknown. Named-source review gates and
 robots checks remain in effect. Other sources listed in the historical audit
 below remain disabled. Collection status and saved listing counts appear under
 Data sources; logs are in `data/automatic-collection.log`.
+
+On 5 October 2026 the same research client received HTTP 200 for HUKU's robots,
+terms and homepage from the development computer. The deployed Render collector's
+latest runs received HTTP 403 at the terms page, before fetching any property.
+This establishes a difference in access between environments, not the exact
+blocking rule. The collector stops that source on a denial and continues other
+sources; it does not bypass the review check or attempt blocked APIs. Restoring
+hosted access requires HUKU to approve access or provide a supported listing feed.
+
+An access request should identify the prototype
+`https://land-discover-prototype.vercel.app`, backend
+`https://land-discover-api.onrender.com`, and user agent
+`LandDiscoverResearch/0.1`. Request permission for bounded public HTML collection
+including property descriptions and photos, or a feed containing those fields.
+The current hosted batch checks at most 20 listings per startup and spaces source
+requests by at least three seconds. If HUKU needs an IP allowlist, provide the
+service's current outbound ranges from Render's dashboard; the website's URL
+is not its outbound IP address. No access request has been sent by this project.
+
+After source access is approved, deploy the correction and restart the backend
+to run a fresh collection cycle. Confirm a new HUKU run completes with imported
+records. The contact-section correction prevents a separate false policy-change
+failure; it does not resolve HTTP 403. A bounded local validation on 5 October
+2026 imported three HUKU properties without errors; those local records have
+not been added to the hosted database.
 
 ---
 
