@@ -1,9 +1,14 @@
 import pytest
 from land_discover.db import init_db
 
-@pytest.fixture(autouse=True)
-def isolated_db(tmp_path,monkeypatch):
+@pytest.fixture(autouse=True, params=['sqlite', 'libsql'])
+def isolated_db(tmp_path,monkeypatch,request):
+    monkeypatch.delenv('TURSO_DATABASE_URL', raising=False)
+    monkeypatch.delenv('TURSO_AUTH_TOKEN', raising=False)
+    monkeypatch.setenv('LAND_REQUIRE_PERSISTENT_DB', 'false')
+    monkeypatch.setenv('LAND_DATABASE_DRIVER', request.param)
     monkeypatch.setenv('LAND_DB',str(tmp_path/'test.sqlite3'))
+    monkeypatch.setenv('LAND_AUTO_SCRAPE','false')
     init_db()
 
 @pytest.fixture

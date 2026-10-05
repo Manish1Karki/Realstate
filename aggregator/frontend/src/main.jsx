@@ -218,6 +218,9 @@ function Detail({ id, onClose }) {
       ) : (
         <>
           <h2>{record.title}</h2>
+          {(record.image_urls?.length || record.image_url) && <div className="property-gallery">{(record.image_urls?.length ? record.image_urls : [record.image_url]).map((url,i) => <img key={url} src={url} alt={`${record.title} — photo ${i+1}`} loading="lazy" referrerPolicy="no-referrer" />)}</div>}
+          {record.description && <p className="property-description">{record.description}</p>}
+          {(record.bedrooms != null || record.bathrooms != null) && <p>{record.bedrooms ?? "Unknown"} bedrooms · {record.bathrooms ?? "Unknown"} bathrooms</p>}
           <p className="muted">
             <MapPin size={15} /> {record.address}
           </p>
@@ -353,8 +356,11 @@ function PropertyCard({ property, onSelect }) {
         aria-label={`View ${property.title}`}
       >
         <div className={`property-card-visual ${property.property_type}`}>
-          <PropertyIcon size={38} />
-          <span>No approved property photo</span>
+          {property.image_url ? (
+            <img className="property-card-photo" src={property.image_url} alt={property.title} loading="lazy" referrerPolicy="no-referrer" />
+          ) : (
+            <><PropertyIcon size={38} /><span>Photo unavailable</span></>
+          )}
           <b>
             {property.transaction_type === "rent" ? "For rent" : "For sale"}
           </b>
@@ -407,6 +413,20 @@ function PropertyCard({ property, onSelect }) {
       </button>
     </article>
   );
+}
+
+function CollectionStatus({ collection }) {
+  const cycle = collection?.cycle;
+  return <section className="panel import-panel" aria-live="polite">
+    <h2>Automatic property collection</h2>
+    <p>{collection?.enabled ? "Listings are collected automatically whenever the aggregator starts. No URLs or manual imports needed." : "Automatic collection is disabled in the server settings."}</p>
+    <p>Sources: {(collection?.sources || []).map(s => s === "huku" ? "HUKU Real Estate" : s === "hamrobazar" ? "Hamrobazar" : s).join(", ")}</p>
+    {cycle ? <>
+      <p><strong>{cycle.status === "running" ? `Collecting ${cycle.current_source || "sources"}?` : `Last collection: ${cycle.status}`}</strong> ? Started {new Date(cycle.started_at).toLocaleString()}</p>
+      {(cycle.reports || []).map(r => <div key={r.source}><p>{r.source}: {r.imported} listings imported ? {r.status}</p>{(r.errors || []).map((e,i) => <p className="muted" key={i}>{e.message}</p>)}</div>)}
+    </> : <p>Waiting for the first startup collection.</p>}
+    <p className="muted">Existing listings stay available during collection. Repeat runs update matching listings. This page refreshes automatically.</p>
+  </section>;
 }
 
 function App() {
@@ -463,6 +483,26 @@ function App() {
       });
     return () => c.abort();
   }, [params, page, sort, refresh]);
+  useEffect(() => {
+    const controller = new AbortController();
+    let inFlight = false;
+    const timer = setInterval(async () => {
+      if (inFlight) return;
+      inFlight = true;
+      try {
+        const [table, summary, map, sources, nextOptions] = await Promise.all([
+          api(`/api/properties?${params}&page=${page}&sort=${sort}`, controller.signal),
+          api("/api/summary?" + params, controller.signal),
+          api("/api/map?" + params, controller.signal),
+          api("/api/sources", controller.signal),
+          api("/api/options?dataset=" + dataset, controller.signal),
+        ]);
+        if (!controller.signal.aborted) { setData({ table, summary, map, sources }); setOptions(nextOptions); }
+      } catch (e) { if (e.name !== "AbortError") setError(e.message); }
+      finally { inFlight = false; }
+    }, 5000);
+    return () => { clearInterval(timer); controller.abort(); };
+  }, [params, page, sort, dataset]);
   function switchDataset(value) {
     setDataset(value);
     setFilters(initial);
@@ -505,7 +545,7 @@ function App() {
   return (
     <div className="app">
       <aside className="sidebar">
-        <a className="brand" href="#">
+        <a className="brand" href="/">
           <span className="brand-icon">
             <LandPlot size={23} />
           </span>
@@ -527,6 +567,8 @@ function App() {
         >
           <Database size={19} /> Data sources
         </button>
+        <a className="nav-item" href="/properties"><Building2 size={19} /> Marketplace</a>
+        <a className="nav-item" href="/login"><ArrowUpRight size={19} /> Account</a>
         <div className="sidebar-bottom">
           <div className="valley-symbol">
             <Compass size={27} />
@@ -615,6 +657,7 @@ function App() {
           )}
           {view === "sources" ? (
             <>
+              <CollectionStatus collection={data?.sources.collection} />
               <div className="sources-grid">
                 {(data?.sources.sources || []).map((s) => (
                   <article className="source-card" key={s.id}>
@@ -625,6 +668,7 @@ function App() {
                       </span>
                     </div>
                     <h2>{s.name}</h2>
+                    <p><strong>{s.listing_count || 0}</strong> saved listings ? {s.auto_collect ? "Automatic on startup" : "Not enabled"}</p>
                     <p>{s.reason}</p>
                     {s.terms_url && (
                       <a href={s.terms_url} target="_blank" rel="noreferrer">
@@ -658,7 +702,7 @@ function App() {
                             <td>{r.imported}</td>
                             <td>{r.rejected}</td>
                             <td>
-                              {JSON.parse(r.errors)
+                              {(Array.isArray(r.errors) ? r.errors : JSON.parse(r.errors))
                                 .map((e) => e.message)
                                 .join("; ") || "—"}
                             </td>
@@ -669,8 +713,7 @@ function App() {
                   </div>
                 ) : (
                   <p>
-                    No collection runs yet. Run the collection CLI after source
-                    validation.
+                    No collection runs yet. Collection begins automatically when the aggregator starts.
                   </p>
                 )}
               </section>

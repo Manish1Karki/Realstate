@@ -1,0 +1,13 @@
+{
+  "name": "land-discover-prototype",
+  "private": true,
+  "type": "module",
+  "engines": { "node": "24.x" },
+  "scripts": {
+    "install:apps": "npm --prefix LandingPage ci && npm --prefix aggregator/frontend ci",
+    "build": "node scripts/build-prototype.mjs",
+    "test:hosting": "node --test tests/hosting.test.mjs",
+    "dev:landing": "npm --prefix LandingPage run dev -- --host 127.0.0.1",
+    "dev:aggregator": "npm --prefix aggregator/frontend run dev -- --base /aggregator/ --port 5174 --strictPort"
+  }
+}

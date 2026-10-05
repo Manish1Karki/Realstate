@@ -1,4 +1,6 @@
 .sites-runtime/
+.media-tools/
+.review/
 node_modules/
 .env
 .env.*
@@ -10,4 +12,6 @@ node_modules/
 aggregator/data/*
 !aggregator/data/.gitkeep
 aggregator/frontend/dist/
+dist/
+.vercel/
 aggregator/source_reviews.json

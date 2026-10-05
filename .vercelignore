@@ -1,0 +1,14 @@
+VisualTour/
+aggregator/data/
+**/.venv/
+**/__pycache__/
+**/.pytest_cache/
+**/.env
+**/.env.*
+.aws/
+.codex/
+.agents/
+.review/
+.media-tools/
+.sites-runtime/
+*.log

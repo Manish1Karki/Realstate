@@ -1,6 +1,9 @@
 import './App.css'
+import LoginPage from './LoginPage'
+import PropertyDashboard from './PropertyDashboard'
+import AccountMenu from './AccountMenu'
 
-const DASHBOARD_URL = import.meta.env.VITE_DASHBOARD_URL || 'http://127.0.0.1:8000/'
+const DASHBOARD_URL = import.meta.env.VITE_DASHBOARD_URL || '/properties'
 
 const Icon = ({ children, size = 20 }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{children}</svg>
 const Arrow = () => <Icon size={18}><path d="M5 12h14M13 6l6 6-6 6" /></Icon>
@@ -20,11 +23,13 @@ const features = [
 ]
 
 function App() {
+  if (window.location.pathname === '/login' || window.location.hash === '#login') return <LoginPage />
+  if (window.location.pathname === '/properties' || window.location.pathname.startsWith('/properties/')) return <PropertyDashboard />
   return <div className="site-shell">
     <header className="nav-wrap">
       <a className="brand" href="#top"><span className="brand-mark"><Pin size={18} /></span><span>Land<span>Discover</span></span></a>
-      <nav><a href="#how">How it works</a><a href="#intelligence">AI intelligence</a><a href="#explore">Explore</a></nav>
-      <a className="nav-cta" href={DASHBOARD_URL}>Browse properties <Arrow /></a>
+      <nav><a href="#how">How it works</a><a href="/aggregator/">Aggregator</a><a href="#explore">Explore</a></nav>
+      <div className="nav-actions"><AccountMenu signInClass="nav-signin" /><a className="nav-cta" href={DASHBOARD_URL}>Browse properties <Arrow /></a></div>
     </header>
 
     <main id="top">

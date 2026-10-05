@@ -1,5 +1,5 @@
 """Serial, persistent host throttles; robots checks on every redirect target."""
-import os, time, urllib.robotparser
+import os, time, urllib.robotparser, socket, ipaddress
 from urllib.parse import urlparse, urljoin
 from email.utils import parsedate_to_datetime
 from datetime import datetime, timezone
@@ -17,13 +17,15 @@ def throttle(host, seconds):
     time.sleep(max(0,at-time.time()))
 
 class Client:
-    def __init__(self, delay=3):
+    def __init__(self, delay=3, public_only=False):
+        self.public_only=public_only
         self.delay=delay
         self.agent=os.getenv('LAND_USER_AGENT','LandDiscoverResearch/0.1')
         contact=os.getenv('LAND_CONTACT','').strip()
         self.client=httpx.Client(timeout=35,follow_redirects=False,headers={'User-Agent':self.agent+(f' ({contact})' if contact else '')})
     def close(self): self.client.close()
     def request(self, method, url, delay=None, **kwargs):
+        if self.public_only: validate_public_url(url)
         for attempt in range(3):
             throttle(urlparse(url).netloc,max(self.delay,delay or 0))
             try:
@@ -67,3 +69,12 @@ class Client:
             if 'html' not in r.headers.get('content-type',''): raise AccessError('Expected HTML page')
             return r.text
         raise AccessError('Too many redirects')
+
+def validate_public_url(url):
+    parsed=urlparse(url)
+    if parsed.scheme!='https' or not parsed.hostname or parsed.username or parsed.password or parsed.port not in (None,443):
+        raise AccessError('Use a public HTTPS website URL without credentials or a custom port')
+    try: addresses=socket.getaddrinfo(parsed.hostname,443,type=socket.SOCK_STREAM)
+    except socket.gaierror: raise AccessError('Website hostname could not be resolved')
+    if not addresses or any(not ipaddress.ip_address(address[4][0]).is_global for address in addresses):
+        raise AccessError('Private and local network URLs are not supported')

@@ -1,3 +1,30 @@
+# Automatic source collection ? 3 October 2026
+
+The aggregator now runs a background collection cycle on every backend startup.
+No user-supplied property links are needed. Enabled sources:
+
+| Source | Discovery | Detail adapter | Collected fields |
+|---|---|---|---|
+| [Hamrobazar](https://hamrobazaar.com/) | Existing public real-estate category, `/detail/` anchors | Existing Product schema and visible specifications adapter | Public property information, description and photos |
+| [HUKU Real Estate](https://www.hukurealestate.com/) | Public homepage `/properties/<numeric-id>` anchors; category URLs excluded | RealEstateListing schema plus visible header, Features and Description | Price/basis, address, type, sale/rent, size, room counts, date, road notes, image URLs and description |
+
+HUKU's [robots.txt](https://www.hukurealestate.com/robots.txt) permits public
+pages and disallows `/admins/` and `/api/`. Its published
+[terms](https://www.hukurealestate.com/terms-and-services) were reviewed live;
+no explicit prohibition of bounded automated public-page access was present.
+The stable `.prose` policy content is fingerprinted and rechecked before every
+batch. This inspection does not assert a commercial redistribution license.
+Live parser checks covered rental 1560, house 1558 and land 1538. A schema
+SoldOut value can conflict with the advertised page; the adapter retains a
+quality flag for verification instead of inventing an availability state.
+
+Both adapters keep unknown prices/units unknown. Named-source review gates and
+robots checks remain in effect. Other sources listed in the historical audit
+below remain disabled. Collection status and saved listing counts appear under
+Data sources; logs are in `data/automatic-collection.log`.
+
+---
+
 # Source audit — 26 September 2026
 
 A live Hamrobazar batch imported 7 real Kathmandu Valley records on 26 September 2026, skipped 5 unsupported/out-of-area listings and had no parsing failures. The user confirmed there are no source agreements. Hamrobazar is enabled only for bounded local public-HTML collection; no commercial redistribution rights are asserted. Sources with explicit permission restrictions remain disabled.
@@ -14,7 +41,7 @@ Hamrobazar's [published terms](https://hamrobazaar.com/terms), fetched and read 
 
 The first inspection attempt was declined, but the user subsequently explicitly requested a real internet scraper, and approved renewed live inspection and a bounded collection run. No restricted-site access or login bypass was used.
 
-The current adapter uses `script[type="application/ld+json"]` for the Product record, a section headed “About this listing” for visible description, the two-column grid in “Specifications,” and `[data-testid="product-meta-chip"]` for Posted metadata. No hidden hydration data, phone numbers, seller profiles, photos, or full descriptions are retained in the output.
+The current adapter uses `script[type="application/ld+json"]` for the Product record, a section headed “About this listing” for visible description, the two-column grid in “Specifications,” and `[data-testid="product-meta-chip"]` for Posted metadata. No hidden hydration data or seller profiles are accessed. The current adapters retain public property photos and descriptions; this supersedes the original metadata-only output.
 
 ## Enabling a source after permission and validation
 

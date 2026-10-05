@@ -31,11 +31,17 @@ def ld_items(value):
         yield value
         if '@graph' in value: yield from ld_items(value['@graph'])
         if isinstance(value.get('mainEntity'),(dict,list)): yield from ld_items(value['mainEntity'])
+        for key in ('about','itemOffered','containsPlace'):
+            if isinstance(value.get(key),(dict,list)): yield from ld_items(value[key])
 
 def parse_detail(html,url,source):
+    if source=='huku':
+        from .huku import parse
+        return parse(html,url)
     if source=='hamrobazar':
         from .hamrobazar import parse
-        return parse(html,url)
+        from .media import enrich
+        return enrich(parse(html,url),html,url)
     soup=BeautifulSoup(html,'html.parser'); labels=fields(soup)
     h1=soup.find('h1')
     raw=dict(source=source,source_url=url,title=clean(h1.get_text(' ',strip=True)) if h1 else '')
@@ -71,6 +77,11 @@ def parse_detail(html,url,source):
         price=next((x for x in soup.find_all('h2') if re.match(r'\s*Rs\.',x.get_text())),None)
         if price: raw['price_raw']=price.get_text(' ',strip=True).split('(')[0].strip()
     raw.setdefault('price_raw','')
+    if not raw.get('address'):
+        from .hamrobazar import extract_address
+        description=soup.select_one('meta[name="description"], meta[property="og:description"], [itemprop="description"]')
+        text=(description.get('content') or description.get_text(' ',strip=True)) if description else ''
+        raw['address'], inferred=extract_address(raw['title'],text)
     # A source must explicitly say sale/rent; an unknown transaction is not a sale.
     main_text=(soup.find('main') or soup).get_text(' ',strip=True)
     title=raw['title'].lower()
@@ -80,7 +91,8 @@ def parse_detail(html,url,source):
     # Detect conflicting unit evidence anywhere in detail text; do not treat unit prices as totals.
     if item['price_basis']=='total' and re.search(r'(?:per|/)\s*(?:aana|anna|ana|ropani|sq\.?\s*ft)\b',main_text,re.I):
         item['total_price_npr']=None; item['price_basis']='unknown'; item['quality_flags'].append('Unit-price evidence needs review')
-    return item
+    from .media import enrich
+    return enrich(item,html,url)
 
 def discover(html,url,source):
     config=SOURCES[source]; soup=BeautifulSoup(html,'html.parser')
@@ -89,7 +101,11 @@ def discover(html,url,source):
         target=urldefrag(urljoin(url,a['href']))[0]
         parsed=urlparse(target)
         if parsed.scheme!='https' or parsed.hostname!=config['host']: continue
-        if config['detail_path'] and config['detail_path'] in parsed.path: links.append(target)
+        if config.get('detail_pattern'):
+            if re.fullmatch(config['detail_pattern'],parsed.path):
+                if source=='huku': target=parsed._replace(path=parsed.path.rstrip('/'),query='').geturl()
+                links.append(target)
+        elif config['detail_path'] and config['detail_path'] in parsed.path: links.append(target)
         rel=a.get('rel',[]); label=clean(a.get('aria-label') or a.get_text()).lower()
         if 'next' in rel or label in ('next','next page','next »','»'): next_url=target
     return list(dict.fromkeys(links)),next_url
@@ -97,11 +113,12 @@ def discover(html,url,source):
 def review(source,client):
     config=SOURCES[source]
     if config.get('status')=='public_html':
-        from .policy import hamrobazar_terms_digest
+        from .policy import hamrobazar_terms_digest, huku_terms_digest
         age=(date.today()-date.fromisoformat(config['reviewed_on'])).days
         if not 0<=age<=30:raise AccessError('Public source review expired; review current rules again')
         terms=client.page(config['terms_url'],config['host'])
-        if hamrobazar_terms_digest(terms)!=config['terms_sha256']:
+        digest=huku_terms_digest(terms) if source=='huku' else hamrobazar_terms_digest(terms)
+        if digest!=config['terms_sha256']:
             raise AccessError('Published terms changed; review required before collecting more listings')
         return
     if not config['adapter']: raise AccessError(config['reason'])
@@ -151,7 +168,9 @@ def _scrape(source,max_pages,max_listings):
             if not next_url:report['notes'].append('No public next-page link present. Collected this HTML page only; no disallowed API pagination attempted.')
             url=next_url
         status='complete' if not report['errors'] else 'partial'
-    except Exception as e: report['errors'].append({'message':str(e)})
+    except Exception as e:
+        report['errors'].append({'message':str(e)})
+        if report['imported']: status='partial'
     finally:
         c.close()
         with connect() as con:

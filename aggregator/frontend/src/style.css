@@ -1304,3 +1304,10 @@ footer {
 .map-shell {
   overflow: hidden;
 }
+.import-panel { margin-bottom: 24px; }
+.import-controls { display:flex; gap:12px; margin-top:8px; flex-wrap:wrap; }
+.import-controls input { flex:1; min-width:220px; padding:12px; border:1px solid #d8dfd9; border-radius:8px; }
+.property-gallery { display:flex; gap:12px; overflow-x:auto; margin:16px 0; }
+.property-gallery img { width:min(85%,420px); height:260px; object-fit:cover; border-radius:12px; }
+.property-description { white-space:pre-line; }
+.property-card-visual .property-card-photo { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }

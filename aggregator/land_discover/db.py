@@ -4,6 +4,7 @@ import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
 from datetime import datetime, timezone
+from urllib.parse import urlsplit
 from dotenv import load_dotenv
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -16,13 +17,36 @@ def db_path():
     value = Path(os.getenv('LAND_DB', 'data/properties.sqlite3'))
     return value if value.is_absolute() else ROOT / value
 
+def cloud_config():
+    url = os.getenv('TURSO_DATABASE_URL', '').strip()
+    token = os.getenv('TURSO_AUTH_TOKEN', '').strip()
+    if not url and not token:
+        if os.getenv('LAND_REQUIRE_PERSISTENT_DB', 'false').lower() == 'true':
+            raise RuntimeError('Configure TURSO_DATABASE_URL and TURSO_AUTH_TOKEN before starting the hosted backend')
+        return None
+    parsed = urlsplit(url)
+    if not token or parsed.scheme not in ('libsql', 'https') or not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment:
+        raise RuntimeError('Configure a secure Turso database URL and its authentication token')
+    return url, token
+
 @contextmanager
 def connect():
-    path = db_path(); path.parent.mkdir(parents=True, exist_ok=True)
-    con = sqlite3.connect(path, timeout=30)
-    con.row_factory = sqlite3.Row
-    con.execute('PRAGMA foreign_keys=ON')
+    cloud = cloud_config()
+    if cloud or os.getenv('LAND_DATABASE_DRIVER') == 'libsql':
+        import libsql
+        from .cloud_db import Connection
+        if cloud:
+            # Query the cloud primary directly: no ephemeral replica or sync lag.
+            con = Connection(libsql.connect(database=cloud[0], auth_token=cloud[1], timeout=30))
+        else:
+            path = db_path(); path.parent.mkdir(parents=True, exist_ok=True)
+            con = Connection(libsql.connect(str(path), timeout=30))
+    else:
+        path = db_path(); path.parent.mkdir(parents=True, exist_ok=True)
+        con = sqlite3.connect(path, timeout=30)
+        con.row_factory = sqlite3.Row
     try:
+        con.execute('PRAGMA foreign_keys=ON')
         yield con
         con.commit()
     except Exception:
@@ -32,7 +56,8 @@ def connect():
 
 def init_db():
     with connect() as con:
-        con.execute('PRAGMA journal_mode=WAL')
+        if not cloud_config():
+            con.execute('PRAGMA journal_mode=WAL')
         con.executescript('''
         CREATE TABLE IF NOT EXISTS properties (
           id INTEGER PRIMARY KEY, source TEXT NOT NULL, source_url TEXT NOT NULL UNIQUE,
@@ -64,12 +89,38 @@ def init_db():
           status TEXT, pages INTEGER DEFAULT 0, imported INTEGER DEFAULT 0,
           rejected INTEGER DEFAULT 0, errors TEXT DEFAULT '[]'
         );
+        CREATE TABLE IF NOT EXISTS collection_cycles (
+          id INTEGER PRIMARY KEY, started_at TEXT NOT NULL, finished_at TEXT,
+          status TEXT NOT NULL, current_source TEXT, reports TEXT NOT NULL DEFAULT '[]'
+        );
+        CREATE TABLE IF NOT EXISTS users (
+          id INTEGER PRIMARY KEY, email TEXT NOT NULL UNIQUE COLLATE NOCASE,
+          display_name TEXT NOT NULL DEFAULT '', password_hash TEXT NOT NULL,
+          created_at TEXT NOT NULL, last_login_at TEXT
+        );
+        CREATE TABLE IF NOT EXISTS user_sessions (
+          token_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          created_at TEXT NOT NULL, expires_at REAL NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_session_expiry ON user_sessions(expires_at);
+        CREATE TABLE IF NOT EXISTS auth_attempts (
+          key TEXT PRIMARY KEY, started_at REAL NOT NULL, attempts INTEGER NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS password_resets (
+          token_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          expires_at REAL NOT NULL
+        );
         ''')
+        existing = {row['name'] for row in con.execute('PRAGMA table_info(properties)')}
+        for column, kind in [('description', 'TEXT'), ('bedrooms', 'INTEGER'), ('bathrooms', 'INTEGER'), ('contact_name', 'TEXT'), ('contact_phone', 'TEXT'), ('image_url', 'TEXT'), ('image_urls', "TEXT DEFAULT '[]'")]:
+            if column not in existing:
+                con.execute(f'ALTER TABLE properties ADD COLUMN {column} {kind}')
 
 def upsert(item):
     item = dict(item)
     item.setdefault('scraped_date', now()); item.setdefault('first_seen', now())
     if isinstance(item.get('quality_flags'), list): item['quality_flags'] = json.dumps(item['quality_flags'])
+    if isinstance(item.get('image_urls'), list): item['image_urls'] = json.dumps(item['image_urls'])
     with connect() as con:
         old = con.execute('SELECT * FROM properties WHERE source_url=?', (item['source_url'],)).fetchone()
         if old and old['address'] != item['address']:

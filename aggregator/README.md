@@ -6,10 +6,10 @@ Python 3.12+, FastAPI, SQLite, BeautifulSoup, React, Vite and Leaflet. This app 
 
 - Working dashboard: interactive OSM map, price/proximity marker colours, amenity heatmap, area/ward/type/price/proximity filters, paginated table, property detail dialog with mini-map, land-price comparison chart, CSV export and source status view.
 - Working offline-tested pipeline: conservative price/size/date normalization, idempotent SQLite upserts, bounded pagination, robots checks, rate limiting, retries, source policy review gates, Nominatim geocoding/cache, Overpass enrichment/cache and run logs.
-- **Working live Hamrobazar scraper.** A live run on 26 September 2026 imported 7 Valley listings, skipped 5 unsupported/out-of-area listings and reported no parsing failures. The CSV is `data/hamrobazar-listings.csv`; the same records are stored in SQLite and appear under Collected data. Other candidate sources remain disabled because of explicit reuse restrictions or unverified domains.
+- **Automatic multi-source collection:** every backend startup launches a background collection cycle for Hamrobazar and HUKU Real Estate. HUKU house, rental and land pages were inspected live on 3 October 2026. Both adapters retain available photos and property details; existing source URLs are updated without duplicates.
 - 40 synthetic examples can be explicitly seeded for UI testing. They are isolated from collected data in every list, map, summary and export query.
 - Live location validation: 4 of the 7 collected properties matched approximate OSM locations and were enriched within 1,500 m, producing 337 property-linked facility/road rows. These are not 337 unique facilities across the valley. Three addresses remain unresolved or too vague; no coordinates were fabricated.
-- No AI valuation model, forecast model, water reliability inference, authentication or automatic collection scheduler is included.
+- No AI valuation model, forecast model, water reliability inference, authentication or periodic collection scheduler is included. Automatic collection on backend startup is included.
 
 ## Quick start on Windows
 
@@ -87,7 +87,7 @@ Overpass requests are at least 5 seconds apart and cached for 30 days. Schools/c
 
 ## Data and calculations
 
-- SQLite path defaults to `data/properties.sqlite3`, configurable with `LAND_DB`.
+- SQLite path defaults to `data/properties.sqlite3`, configurable with `LAND_DB`. Free hosting uses a remote Turso libSQL database via `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN`; accounts and listings survive backend restarts. See [deployment instructions](../DEPLOYMENT.md).
 - Raw asking price, price basis, total price and original size are separate fields. A per-aana price is multiplied by the parsed land size only when both are known; a quality flag records the calculation.
 - 1 ropani = 16 aana; 1 aana = 342.25 sq ft; 1 paisa = 1/4 aana; 1 daam = 1/4 paisa. Unsupported units remain unparsed.
 - Hamrobazar's minute/hour/day/week relative Posted labels are converted to approximate dates in Nepal time, flagged as approximate, and preserved in `listing_date_raw`. Other unrecognized/Bikram Sambat dates remain raw; no guessed calendar conversion. Scraped date and first seen are separate from listing date.
@@ -135,3 +135,50 @@ docs/SOURCES.md   Source review evidence and next steps
 This is a local single-operator app. It binds to loopback; collection is CLI-only. Hosting requires a Python runtime and persistent SQLite storage, which the existing static marketing site does not provide. Add authentication and operational hardening before exposing the API beyond a trusted environment. This app has not been deployed over the existing landing page.
 
 Map tiles and data: [OpenStreetMap contributors, ODbL](https://www.openstreetmap.org/copyright). Follow the [Nominatim policy](https://operations.osmfoundation.org/policies/nominatim/), [OSM tile policy](https://operations.osmfoundation.org/policies/tiles/), and [Overpass public-instance guidance](https://dev.overpass-api.de/overpass-doc/en/preface/commons.html). Leaflet tiles are fetched only for the visible view; there is no tile prefetching/offline download.
+## Automatic collection on startup
+
+Start the backend with `./start.ps1` or the Uvicorn command above. Collection
+starts automatically in a separate background process on every backend startup.
+No property URLs or manual imports are required. Restarting only the frontend
+or refreshing the browser does not start another scrape.
+
+The configured sources are **Hamrobazar** and **HUKU Real Estate**. The system
+uses their built-in public category/homepage URLs, discovers property detail
+links, and updates SQLite records by source URL. By default each source is
+limited to two HTML pages and 20 candidate listings per startup. Homes, land,
+apartments and available rental listings in Kathmandu Valley are supported.
+
+Photos appear in property cards and detail galleries. Descriptions, bedrooms,
+bathrooms, price, address, area, size, posted dates and road notes are retained
+when available. Image files stay on the source/CDN; the database stores HTTPS
+image URLs. Existing records are preserved by schema migrations.
+
+**Data sources** displays the active source, collection results, source listing
+counts and run errors. Dashboard data refreshes every five seconds without
+resetting filters. Source failures are isolated so collection proceeds to the
+next source. Existing data stays available while collection is running.
+
+Optional settings in `.env`:
+
+```dotenv
+LAND_AUTO_SCRAPE=true
+LAND_AUTO_SCRAPE_PAGES=2
+LAND_AUTO_SCRAPE_LIMIT=20
+```
+
+Set `LAND_AUTO_SCRAPE=false` for an offline server. Each cycle is guarded by
+an OS lock to prevent duplicate collectors. Backend shutdown terminates its
+worker. An unfinished cycle is marked interrupted on the next startup.
+Collection logs are saved to `data/automatic-collection.log`. The latest cycle
+and per-source runs are available from `GET /api/sources`.
+
+Robots checks, request throttling and existing source review checks still apply.
+Reviews expire after 30 days and changed policy fingerprints stop that source
+until its policy is reviewed again. Sources with existing permission restrictions
+remain disabled. Public HTML pagination is followed when present; private APIs
+and login/CAPTCHA bypasses are not used. A startup cycle collects a bounded batch,
+not the entire inventory of each website.
+
+The lower-level `POST /api/import` endpoint remains available for development
+and accepts a public HTTPS URL, `max_pages` (1?5), and `max_listings` (1?30).
+The normal dashboard workflow uses automatic collection.

@@ -1,0 +1,38 @@
+services:
+  - type: web
+    name: land-discover-api
+    runtime: python
+    rootDir: aggregator
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn land_discover.api:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.14
+      - key: LAND_DB
+        value: data/properties.sqlite3
+      - key: LAND_REQUIRE_PERSISTENT_DB
+        value: "true"
+      - key: TURSO_DATABASE_URL
+        sync: false
+      - key: TURSO_AUTH_TOKEN
+        sync: false
+      - key: LAND_AUTO_SCRAPE
+        value: "true"
+      - key: LAND_AUTO_SCRAPE_PAGES
+        value: "1"
+      - key: LAND_AUTO_SCRAPE_LIMIT
+        value: "20"
+      - key: LAND_AUTH_SECURE_COOKIE
+        value: "true"
+      - key: LAND_REQUIRE_PROXY
+        value: "true"
+      - key: LAND_PROXY_SECRET
+        generateValue: true
+      - key: LAND_AUTH_ORIGINS
+        sync: false
+      - key: LAND_PUBLIC_URL
+        sync: false
+      - key: LAND_IMPORT_TOKEN
+        generateValue: true

@@ -1,17 +1,34 @@
 import csv, io, json, statistics
 from contextlib import asynccontextmanager
 from typing import Literal
-from fastapi import FastAPI, Depends, HTTPException, Query
-from fastapi.responses import StreamingResponse, FileResponse
+from uuid import uuid4
+from pydantic import BaseModel, Field, field_validator
+from fastapi import FastAPI, Depends, HTTPException, Query, Request
+from fastapi.responses import StreamingResponse, FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from .db import init_db, connect, ROOT
+from .db import init_db, connect, ROOT, upsert, now
+from .normalize import parse_size
 from .sources import SOURCES
 
 @asynccontextmanager
 async def lifespan(app):
-    init_db(); yield
+    from .collector import start_worker, stop_worker
+    init_db()
+    worker=start_worker()
+    app.state.collection_worker=worker
+    try: yield
+    finally: stop_worker(worker)
 
 app=FastAPI(title='Land Discover Valley Data API',version='0.1.0',lifespan=lifespan)
+from .auth import router as auth_router
+app.include_router(auth_router)
+
+@app.middleware('http')
+async def protect_hosted_backend(request, call_next):
+    from .hosting import require_proxy, trusted_proxy
+    if require_proxy() and request.url.path.startswith('/api/') and request.url.path!='/api/health' and not trusted_proxy(request):
+        return JSONResponse(status_code=403,content={'detail':'Access this service through the Land Discover website'})
+    return await call_next(request)
 
 def filters(dataset:Literal['live','demo']='live',district:str='',area:str='',ward:str='',property_type:Literal['','land','house','apartment']='',transaction:Literal['','sale','rent','unknown']='',min_price:float|None=Query(None,ge=0),max_price:float|None=Query(None,ge=0),school_km:float|None=Query(None,ge=0,le=2),hospital_km:float|None=Query(None,ge=0,le=2),radius_m:int|None=Query(None,ge=250,le=2000)):
     if min_price is not None and max_price is not None and min_price>max_price: raise HTTPException(422,'Minimum price exceeds maximum price')
@@ -24,7 +41,67 @@ def filters(dataset:Literal['live','demo']='live',district:str='',area:str='',wa
     return ' AND '.join(clauses),values
 
 def decode(row):
-    value=dict(row); value['quality_flags']=json.loads(value['quality_flags']); return value
+    value=dict(row); value['quality_flags']=json.loads(value['quality_flags']); value['image_urls']=json.loads(value.get('image_urls') or '[]'); return value
+
+class ImportRequest(BaseModel):
+    url: str = Field(min_length=10, max_length=2000)
+    max_pages: int = Field(default=1, ge=1, le=5)
+    max_listings: int = Field(default=10, ge=1, le=30)
+
+@app.post('/api/import')
+def import_listings(body: ImportRequest, request: Request):
+    from .importer import import_url
+    from .http import AccessError
+    from .hosting import check_import_access
+    check_import_access(request)
+    try: return import_url(body.url, body.max_pages, body.max_listings)
+    except (ValueError, AccessError) as exc: raise HTTPException(422, str(exc))
+
+class PropertySubmission(BaseModel):
+    title: str = Field(min_length=3, max_length=140)
+    address: str = Field(min_length=3, max_length=250)
+    area_name: str = Field(min_length=2, max_length=100)
+    district: Literal['Kathmandu', 'Lalitpur', 'Bhaktapur']
+    property_type: Literal['land', 'house', 'apartment']
+    transaction_type: Literal['sale', 'rent']
+    total_price_npr: float = Field(gt=0, le=1e12, allow_inf_nan=False)
+    size: str = Field(min_length=1, max_length=80)
+    description: str = Field(min_length=10, max_length=5000)
+    road_access_note: str = Field(default='', max_length=300)
+    bedrooms: int | None = Field(default=None, ge=0, le=100)
+    bathrooms: int | None = Field(default=None, ge=0, le=100)
+    contact_name: str = Field(min_length=2, max_length=100)
+    contact_phone: str = Field(min_length=7, max_length=30, pattern=r'^\+?[0-9 ()-]+$')
+    image_url: str = Field(default='', max_length=2000)
+
+    @field_validator('title', 'address', 'area_name', 'size', 'description', 'contact_name', 'contact_phone', mode='before')
+    @classmethod
+    def strip_text(cls, value):
+        return value.strip() if isinstance(value, str) else value
+
+    @field_validator('image_url')
+    @classmethod
+    def safe_image(cls, value):
+        from urllib.parse import urlparse
+        value = value.strip()
+        if value and (urlparse(value).scheme != 'https' or not urlparse(value).netloc):
+            raise ValueError('Photo URL must be an HTTPS URL')
+        return value
+
+@app.post('/api/properties', status_code=201)
+def create_property(submission: PropertySubmission):
+    item = submission.model_dump()
+    stamp = now()
+    rental = item['transaction_type'] == 'rent'
+    item.update(source='community', source_url=f'community:{uuid4()}',
+                price_npr=item['total_price_npr'], price_basis='monthly' if rental else 'total',
+                price_raw=f"NPR {item['total_price_npr']:g}" + (' per month' if rental else ''),
+                total_price_npr=None if rental else item['total_price_npr'],
+                size_sqft=parse_size(item['size']), listing_date=stamp[:10],
+                quality_flags=['Owner-submitted listing; details have not been independently verified.'],
+                geocode_status='pending', enrichment_status='pending', is_demo=0)
+    property_id = upsert(item)
+    return detail(property_id)
 
 @app.get('/api/health')
 def health(): return {'status':'ok'}
@@ -36,8 +113,14 @@ def options(dataset:Literal['live','demo']='live'):
     return {'districts':sorted({r['district'] for r in rows}),'areas':sorted({r['area_name'] for r in rows}),'wards':sorted({r['ward'] for r in rows if r['ward']}),'radii':sorted({r['enrichment_radius_m'] for r in rows if r['enrichment_radius_m']})}
 
 @app.get('/api/properties')
-def properties(f=Depends(filters),page:int=Query(1,ge=1),page_size:int=Query(25,ge=1,le=100),sort:Literal['newest','price_asc','price_desc']='newest'):
+def properties(f=Depends(filters),page:int=Query(1,ge=1),page_size:int=Query(25,ge=1,le=100),sort:Literal['newest','price_asc','price_desc']='newest',q:str=Query('',max_length=200),saved_ids:list[int]|None=Query(None,max_length=500)):
     where,args=f
+    if q.strip():
+        where += ' AND (instr(lower(title),lower(?))>0 OR instr(lower(address),lower(?))>0 OR instr(lower(area_name),lower(?))>0 OR instr(lower(district),lower(?))>0)'
+        args += [q.strip()] * 4
+    if saved_ids is not None:
+        where += ' AND id IN (' + ','.join('?' for _ in saved_ids) + ')'
+        args += saved_ids
     order={'newest':'scraped_date DESC,id DESC','price_asc':'total_price_npr IS NULL,total_price_npr ASC,id','price_desc':'total_price_npr IS NULL,total_price_npr DESC,id'}[sort]
     with connect() as con:
         total=con.execute('SELECT COUNT(*) FROM properties WHERE '+where,args).fetchone()[0]
@@ -93,8 +176,11 @@ def export(f=Depends(filters)):
 
 @app.get('/api/sources')
 def sources():
-    with connect() as con: runs=con.execute('SELECT * FROM runs ORDER BY id DESC LIMIT 10').fetchall()
-    return {'sources':[dict(id=k,**v) for k,v in SOURCES.items()],'runs':[dict(r) for r in runs]}
+    from .collector import collection_status
+    with connect() as con:
+        runs=con.execute('SELECT * FROM runs ORDER BY id DESC LIMIT 20').fetchall()
+        counts={r['source']:r['count'] for r in con.execute('SELECT source,COUNT(*) count FROM properties WHERE is_demo=0 GROUP BY source')}
+    return {'sources':[dict(id=k,listing_count=counts.get(k,0),**v) for k,v in SOURCES.items()],'runs':[dict(r,errors=json.loads(r['errors'])) for r in runs],'collection':collection_status()}
 
 FRONTEND=ROOT/'frontend'/'dist'
 if FRONTEND.exists():
