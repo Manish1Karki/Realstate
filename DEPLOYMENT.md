@@ -20,10 +20,18 @@ accounts, sessions, and scraped listings across deployments and runs the existin
 background scraper on every backend restart. This setup deploys the user-facing
 system on Vercel; the backend and storage are separate services.
 
-The files are prepared locally. No hosting service has been provisioned or paid
-for, and no public deployment has been created by this change.
+The prototype is live at **https://land-discover-prototype.vercel.app**. Its backend
+is `https://land-discover-api.onrender.com`, and persistent storage is the Turso
+libSQL database `land-discover-prototype`. All three services use free plans.
+Production secrets are configured in the providers, not in this repository.
 
-## 1. Publish your code to a private repository
+Hosted checks passed for registration, sessions, logout, login, page refreshes,
+frontend assets, property details, and exclusion of `/VisualTour/`. The first
+startup collected five Hamrobazar listings with photos. HUKU currently returns
+HTTP 403 to the hosted collector; the Data sources screen records that error.
+The steps below document how to recreate the deployment.
+
+## 1. Publish application code
 
 Commit application code, `package.json`, `package-lock.json`, `vercel.json`,
 `render.yaml`, and this guide. Do not commit `.env`, accounts, local database
@@ -133,12 +141,30 @@ until that source is reviewed again.
 
 ## Keep updating while testing
 
-Push changes to the linked repository to redeploy the prototype. Vercel preview
-deployments can use the testing backend with the same proxy environment
-variables. Treat this shared database as prototype data; when real users join,
-use a separate testing backend/database for previews. Turso keeps records during
-backend redeployments and idle shutdowns. Keep database tokens and proxy secrets
-out of frontend code and the repository.
+The current Vercel deployment was published through the CLI. Its GitHub
+integration is not connected, so pushing to GitHub alone does not publish website
+changes. From the repository root, deploy an update with:
+
+```powershell
+npm.cmd run deploy:prototype
+```
+
+The script prepares a clean upload containing application sources and project
+link metadata, then runs the Vercel production deployment. It excludes local
+databases, environment files, dependencies, caches, and VisualTour. This also
+avoids a Windows permission error when the CLI scans the local Python cache.
+Use `npm.cmd run deploy:prototype -- --prepare-only` to inspect the upload without
+publishing it. On another
+machine, first sign in to the Vercel CLI and link the existing
+`land-discover-prototype` project in the `manish-33ce` team.
+
+For backend changes, push the commit to GitHub and select **Manual Deploy →
+Deploy latest commit** in the Render service dashboard. Keep the existing
+database environment variables. Turso keeps records during backend redeployments
+and idle shutdowns. Preview deployments are not configured in this prototype;
+before using them, configure their server-side proxy variables and use a separate
+testing backend/database when real users join. Keep database tokens and proxy
+secrets out of frontend code and the repository.
 
 ## Local development and checks
 

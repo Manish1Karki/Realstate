@@ -1,4 +1,5 @@
 VisualTour/
+render.yaml
 aggregator/data/
 **/.venv/
 **/__pycache__/
