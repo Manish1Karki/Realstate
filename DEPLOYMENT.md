@@ -27,9 +27,8 @@ is `https://land-discover-api.onrender.com`, and persistent storage is the Turso
 libSQL database `land-discover-prototype`. All three services use free plans.
 Production secrets are configured in the providers, not in this repository.
 
-The Next.js cutover has not been published. Deploy the FastAPI change first so
-the new `/api/sitemap` endpoint is available, then deploy the website. The current
-hosted app remains the Vite prototype until this cutover is intentionally published.
+The Next.js marketplace and matching FastAPI backend were published on
+2026-10-11. Deploy backend API changes before website updates that depend on them.
 
 ## 1. Publish application code
 

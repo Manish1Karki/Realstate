@@ -24,3 +24,5 @@ public/visual-tour/
 *.tsbuildinfo
 VisualTour/node_modules/
 VisualTour/dist/
+
+VisualTour/public/cesiumStatic/
