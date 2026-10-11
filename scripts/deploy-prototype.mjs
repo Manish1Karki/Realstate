@@ -14,18 +14,7 @@ await mkdir(stagingParent, { recursive: true });
 const uploadRoot = await mkdtemp(path.join(stagingParent, 'site-'));
 
 // Copy only build inputs. Local databases, secrets and Python caches stay out.
-const sources = ['package.json', 'package-lock.json', 'vercel.json', '.vercelignore', 'api', 'scripts', '.vercel/project.json'];
-for (const app of ['LandingPage', 'aggregator/frontend']) {
-  for (const name of ['package.json', 'package-lock.json', 'index.html', 'vite.config.js', 'src']) {
-    sources.push(`${app}/${name}`);
-  }
-  try {
-    await access(path.join(projectRoot, app, 'public'));
-    sources.push(`${app}/public`);
-  } catch (error) {
-    if (error.code !== 'ENOENT') throw error;
-  }
-}
+const sources = ['package.json', 'package-lock.json', 'vercel.json', '.vercelignore', 'api', 'app', 'lib', 'next.config.ts', 'tsconfig.json', 'scripts', 'VisualTour/package.json', 'VisualTour/package-lock.json', 'VisualTour/index.html', 'VisualTour/vite.config.js', 'VisualTour/src', '.vercel/project.json'];
 for (const relativePath of sources) {
   const destination = path.join(uploadRoot, relativePath);
   await mkdir(path.dirname(destination), { recursive: true });

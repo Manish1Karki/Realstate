@@ -1,3 +1,40 @@
+# Current multi-source collection: 10 October 2026
+
+Six sources are enabled: Hamrobazar, HUKU, Nepal Bhoomi, Ghar Jagga Nepal,
+Nepal Home Search, and Trade Nepal Real Estate. The collector scans public HTML
+and follows validated index pagination. It runs on startup and every six hours,
+with six index pages / 80 inspected detail URLs per source per cycle by default.
+
+Only original posting/publication dates within six calendar months in Nepal time
+are published. Modified dates, photo-upload dates and build years cannot substitute
+for a listing date. Unknown/future/old dates are excluded. Coordinates are optional.
+Title, address, property type, sale/rent information and a price, size
+or meaningful description are required. Unsupported categories and outside-Valley
+addresses remain outside the current marketplace scope.
+
+The new adapters were verified against live public HTML on 10 October:
+- Ghar Jagga Nepal: GeoDirectory facts, original WebPage datePublished.
+- Nepal Home Search: property facts, visible per-unit price, article publication metadata.
+- Trade Nepal: RealEstateListing datePosted, NPR price, address and images.
+- Nepal Bhoomi: existing buy/rent/detail adapter enabled after renewed review.
+
+Requests use robots checks and a persistent three-second host throttle.
+Available source-policy pages are fingerprinted; changed policies halt that source.
+No private APIs, account-required data or access-blocking workarounds are used.
+
+Additional sites audited: 99aana, Gharghaderi, Mero Garh, JaggaDhani,
+GharJaggaBazar, Nepal Ghar Jagga, Ghar Jagga Dealer, Neo Property Nepal,
+JaggaMitra, Lalpurja Nepal and Leaf Property Hub. Some explicitly prohibit
+scraping/republication; others expose template content, no original listing dates,
+broken detail URLs, unreadable robots rules or imported development data.
+These are not enabled merely to increase the source count.
+
+Live audit snapshots and reports are under .review/source-audit-20261010/.
+Runtime history is stored in the database and data/automatic-collection.log.
+Rows are upserted by source URL, so repeated collection updates the cache.
+
+## Historical two-source audit
+
 # Automatic source collection ? 3 October 2026
 
 The aggregator now runs a background collection cycle on every backend startup.
@@ -79,6 +116,29 @@ The current adapter uses `script[type="application/ld+json"]` for the Product re
 4. Implement a missing source adapter/start page only from verified structure. Hamrobazar already has a live-specific adapter. Gharbazar has an offline semantic parser only; the other restricted sources deliberately have `adapter: null`.
 5. For an additional permission-required source, copy `source_reviews.example.json` to `source_reviews.json`. Enter the validated source's `enabled`, `live_validated`, `reviewed_on`, `permission_evidence`, and `terms_sha256`. The additional-source hash covers the exact fetched terms HTML; a stable policy-section digest should be added after that source's DOM is verified. Hamrobazar uses its built-in reviewed visible-text fingerprint instead. Do not refresh any hash without reviewing the actual policy change.
 6. Run a bounded validation batch, inspect raw/normalized output and quality flags, then run enrichment. Reviews expire after 30 days. Robots are refreshed at least daily and consulted before every page and redirect target.
+
+## Additional source review — 8 October 2026
+
+The source registry also tracks candidates that are visible online but are not
+currently authorized for collection:
+
+- [eProperty Nepal](https://epropertynepal.com/terms-condition): terms limit
+  listing information to internal use and prohibit distribution, publication,
+  or use on another listing service without permission. Its adapter is disabled.
+- [HamroBhumi](https://www.hamrobhumi.com/terms): section 6 prohibits scraping
+  and copying platform content.
+- [GharJaggaFinder](https://www.gharjaggafinder.com/terms): section 3 prohibits
+  copying data or reverse engineering without consent.
+- [Real Estate in Nepal](https://realestateinnepal.com/terms-conditions/):
+  section 9 prohibits copying or distributing site content without prior written
+  consent.
+- [MeroBhumi](https://www.merobhumi.com/): public property pages are visible,
+  but current terms and robots rules were not verified, so it remains a review
+  candidate with no adapter.
+
+These checks are not legal advice or a substitute for written permission. Until
+an allowed feed or permission is in place, the system keeps these sources out of
+collection and public listings.
 
 The inventory is intentionally conservative: registering a source does not mean it works, and a failed run is logged rather than displayed as a successful empty scrape. `audit_sources.py` is a bounded reconnaissance utility; it is not a production scraper. Previously downloaded reconnaissance HTML is excluded from version control.
 

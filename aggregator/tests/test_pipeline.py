@@ -70,10 +70,10 @@ def test_geocode_rejects_wrong_district_and_ambiguity(raw):
     query='geocode:https://nominatim.openstreetmap.org:'+raw['address'].lower()+', nepal'
     hit={'lat':'27.7','lon':'85.3','address':{'county':'Kathmandu'},'addresstype':'suburb','display_name':'Fixture'}
     cache_set(query,[hit,hit])
-    assert geocode(normalize(raw),Fake())['geocode_status']=='ambiguous'
+    assert geocode(normalize(raw),Fake(),allow_area_fallback=False)['geocode_status']=='ambiguous'
     cache_set(query,[{**hit,'address':{'county':'Lalitpur'}}])
-    assert geocode(normalize(raw),Fake())['geocode_status']=='not_found'
-    cache_set(query,[hit]); assert geocode(normalize(raw),Fake())['lat']==27.7
+    assert geocode(normalize(raw),Fake(),allow_area_fallback=False)['geocode_status']=='not_found'
+    cache_set(query,[hit]); assert geocode(normalize(raw),Fake(),allow_area_fallback=False)['lat']==27.7
 
 def test_source_gate_before_network(monkeypatch):
     monkeypatch.setattr(Client,'request',lambda *a,**k:pytest.fail('Unreviewed source made a network request'))
@@ -103,7 +103,7 @@ def test_robots_denial_and_redirect_checks(monkeypatch):
     c.close()
 
 def test_api_filters_export_summary_and_dataset_isolation(raw):
-    item=normalize(raw); item['area_name']='=FORMULA';id=upsert(item)
+    item={**normalize(raw),'image_url':'https://example.org/land.jpg'}; item['area_name']='=FORMULA';id=upsert(item)
     demo={**item,'source_url':'demo://2','is_demo':1,'area_name':'Synthetic'};upsert(demo)
     unknown={**item,'source_url':'https://example.org/3','price_npr':None,'total_price_npr':None};upsert(unknown)
     with TestClient(app) as client:

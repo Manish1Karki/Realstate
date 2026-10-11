@@ -8,8 +8,8 @@ Python 3.12+, FastAPI, SQLite, BeautifulSoup, React, Vite and Leaflet. This app 
 - Working offline-tested pipeline: conservative price/size/date normalization, idempotent SQLite upserts, bounded pagination, robots checks, rate limiting, retries, source policy review gates, Nominatim geocoding/cache, Overpass enrichment/cache and run logs.
 - **Automatic multi-source collection:** every backend startup launches a background collection cycle for Hamrobazar and HUKU Real Estate. HUKU house, rental and land pages were inspected live on 3 October 2026. Both adapters retain available photos and property details; existing source URLs are updated without duplicates.
 - 40 synthetic examples can be explicitly seeded for UI testing. They are isolated from collected data in every list, map, summary and export query.
-- Live location validation: 4 of the 7 collected properties matched approximate OSM locations and were enriched within 1,500 m, producing 337 property-linked facility/road rows. These are not 337 unique facilities across the valley. Three addresses remain unresolved or too vague; no coordinates were fabricated.
-- No AI valuation model, forecast model, water reliability inference, authentication or periodic collection scheduler is included. Automatic collection on backend startup is included.
+- Listing qualification: results, maps, exports and sitemaps include only listings whose original page publishes coordinates and whose nearby school, hospital, mapped-road distances, and source-reported road access are all recorded. Approximate address matches and demo pins do not qualify. No current local record meets every requirement yet.
+- No AI valuation model, forecast model, or water reliability inference is included. Authentication is handled by the main site; the aggregator includes automatic collection on backend startup.
 
 ## Quick start on Windows
 
@@ -73,17 +73,11 @@ Use a unique HTTPS `source_url`, an address including Kathmandu/Lalitpur/Bhaktap
 
 ## Location enrichment
 
-In `.env`, set `LAND_CONTACT` to your real project URL or contact email. Endpoints are configurable. No API key is required.
+Listings must have an original posting date within the past six calendar months (inclusive, Nepal time). Unknown, future, and older dates are skipped during collection and excluded from browsing and exports. A map coordinate and facility enrichment are optional. Address geocoding can be run with `python -m land_discover.cli geocode --limit 100`; map views include only properties with coordinates. Source pins retain the label `source map pin (unverified)` because the original map marker does not prove parcel boundaries.
 
-```powershell
-.\.venv\Scripts\python.exe -m land_discover.cli enrich --limit 10 --radius 1500
-```
+Set `LAND_CONTACT` to the project URL or a contact email. `LAND_AUTO_ENRICH=true` records nearby context for newly scraped source pins; otherwise run `python -m land_discover.cli enrich --limit 10 --radius 1500`. Enrichment never geocodes an address. Listings become visible only after a school, hospital, mapped-road distance, and source-reported road access note are all present. The radius is configurable from 250 to 2,000 metres. The dashboard's radius filter selects stored results and does not initiate external requests.
 
-Radius is configurable from 250 to 2,000 metres. Results are persisted per property. The dashboard's radius control selects already-recorded enrichment; it does not initiate external requests. To recompute, run the CLI with a different radius. Use `--retry` to retry not-found/ambiguous geocodes after improving an address or changing your provider. Never manufacture parcel coordinates from an area centroid.
-
-Geocoding uses an application-identifying User-Agent, one serial batch process per database, a persistent host clock, at least 1.1 seconds between requests, and 90-day response caching (including empty results). Only bounded Valley matches agreeing with the expected district are accepted; multiple matches remain unresolved. Matched coordinates are labelled approximate, not verified parcel boundaries. Bulk/recurring public Nominatim jobs are discouraged; use a suitable hosted or self-hosted service when scaling. Run on one machine, not distributed workers.
-
-Overpass requests are at least 5 seconds apart and cached for 30 days. Schools/colleges, hospitals/clinics/doctors, major road ways, bus stops/platforms/stations, banks and marketplaces are recorded. Facility distances are straight-line distances; road distances use the nearest point on a mapped polyline. Missing amenities do not mean amenities are absent. No water-supply reliability is inferred.
+Overpass requests are at least 5 seconds apart and cached for 30 days. School and hospital distances are straight-line distances; mapped-road distance uses the nearest point on a road polyline. Missing map data leaves a listing unqualified. Use a provider that permits automation when scaling beyond low-volume local use.
 
 ## Data and calculations
 
@@ -142,7 +136,10 @@ starts automatically in a separate background process on every backend startup.
 No property URLs or manual imports are required. Restarting only the frontend
 or refreshing the browser does not start another scrape.
 
-The configured sources are **Hamrobazar** and **HUKU Real Estate**. The system
+The default automatic sources are **Hamrobazar** and **HUKU Real Estate**. The
+source dashboard also distinguishes saved records from records that qualify for
+the exact-pin map. Additional candidates remain disabled until a permitted feed
+or written reuse permission is confirmed. The system
 uses their built-in public category/homepage URLs, discovers property detail
 links, and updates SQLite records by source URL. By default each source is
 limited to two HTML pages and 20 candidate listings per startup. Homes, land,

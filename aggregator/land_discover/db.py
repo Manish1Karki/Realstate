@@ -67,7 +67,8 @@ def init_db():
           total_price_npr REAL, property_type TEXT NOT NULL, transaction_type TEXT DEFAULT 'sale',
           size TEXT, size_sqft REAL, listing_date TEXT, listing_date_raw TEXT,
           nearest_school TEXT, school_distance_km REAL, nearest_hospital TEXT,
-          hospital_distance_km REAL, road_access_note TEXT,
+          hospital_distance_km REAL, nearest_road TEXT, road_distance_km REAL,
+          road_access_note TEXT,
           scraped_date TEXT NOT NULL, first_seen TEXT NOT NULL,
           geocode_status TEXT DEFAULT 'pending', geocode_precision TEXT,
           geocode_label TEXT, geo_error TEXT,
@@ -96,7 +97,8 @@ def init_db():
         CREATE TABLE IF NOT EXISTS users (
           id INTEGER PRIMARY KEY, email TEXT NOT NULL UNIQUE COLLATE NOCASE,
           display_name TEXT NOT NULL DEFAULT '', password_hash TEXT NOT NULL,
-          created_at TEXT NOT NULL, last_login_at TEXT
+          created_at TEXT NOT NULL, last_login_at TEXT,
+          phone_number TEXT NOT NULL DEFAULT '', alternate_phone TEXT NOT NULL DEFAULT ''
         );
         CREATE TABLE IF NOT EXISTS user_sessions (
           token_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -110,9 +112,17 @@ def init_db():
           token_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
           expires_at REAL NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS email_changes (
+          token_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          new_email TEXT NOT NULL COLLATE NOCASE, expires_at REAL NOT NULL
+        );
         ''')
+        user_columns = {row['name'] for row in con.execute('PRAGMA table_info(users)')}
+        for column in ('phone_number', 'alternate_phone'):
+            if column not in user_columns:
+                con.execute(f"ALTER TABLE users ADD COLUMN {column} TEXT NOT NULL DEFAULT ''")
         existing = {row['name'] for row in con.execute('PRAGMA table_info(properties)')}
-        for column, kind in [('description', 'TEXT'), ('bedrooms', 'INTEGER'), ('bathrooms', 'INTEGER'), ('contact_name', 'TEXT'), ('contact_phone', 'TEXT'), ('image_url', 'TEXT'), ('image_urls', "TEXT DEFAULT '[]'")]:
+        for column, kind in [('description', 'TEXT'), ('bedrooms', 'INTEGER'), ('bathrooms', 'INTEGER'), ('contact_name', 'TEXT'), ('contact_phone', 'TEXT'), ('image_url', 'TEXT'), ('image_urls', "TEXT DEFAULT '[]'"), ('nearest_road', 'TEXT'), ('road_distance_km', 'REAL')]:
             if column not in existing:
                 con.execute(f'ALTER TABLE properties ADD COLUMN {column} {kind}')
 
@@ -123,9 +133,12 @@ def upsert(item):
     if isinstance(item.get('image_urls'), list): item['image_urls'] = json.dumps(item['image_urls'])
     with connect() as con:
         old = con.execute('SELECT * FROM properties WHERE source_url=?', (item['source_url'],)).fetchone()
-        if old and old['address'] != item['address']:
+        if old and (old['address'] != item['address']
+                    or ('geocode_precision' in item and old['geocode_precision'] != item['geocode_precision'])
+                    or ('lat' in item and old['lat'] != item['lat'])
+                    or ('lng' in item and old['lng'] != item['lng'])):
             con.execute('DELETE FROM amenities WHERE property_id=?',(old['id'],))
-            con.execute("UPDATE properties SET lat=NULL,lng=NULL,geocode_status='pending',enrichment_status='pending',nearest_school=NULL,school_distance_km=NULL,nearest_hospital=NULL,hospital_distance_km=NULL,amenity_count=NULL,amenity_score=NULL WHERE id=?",(old['id'],))
+            con.execute("UPDATE properties SET lat=NULL,lng=NULL,geocode_status='pending',geocode_precision=NULL,geocode_label=NULL,geo_error=NULL,enrichment_status='pending',enrichment_radius_m=NULL,nearest_school=NULL,school_distance_km=NULL,nearest_hospital=NULL,hospital_distance_km=NULL,nearest_road=NULL,road_distance_km=NULL,amenity_count=NULL,amenity_score=NULL WHERE id=?",(old['id'],))
         columns = list(item)
         updates = ','.join(f'{c}=excluded.{c}' for c in columns if c not in ('source_url','first_seen'))
         con.execute(f"INSERT INTO properties ({','.join(columns)}) VALUES ({','.join('?' for _ in columns)}) ON CONFLICT(source_url) DO UPDATE SET {updates}", list(item.values()))

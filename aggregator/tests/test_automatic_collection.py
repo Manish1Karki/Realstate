@@ -44,7 +44,7 @@ def test_source_failure_does_not_stop_next_source(monkeypatch):
         return {'status':'complete','imported':2,'errors':[]}
     monkeypatch.setattr(collector,'scrape',fake)
     result=collector.collect_all()
-    assert [x[0] for x in calls]==['hamrobazar','huku']
+    assert [x[0] for x in calls]==['hamrobazar','huku','nepalbhoomi','gharjagganepal','nepalhomesearch','tradenepal']
     assert result['status']=='partial'
     assert collector.collection_status()['cycle']['status']=='partial'
     assert collector.collection_status()['cycle']['current_source'] is None
@@ -69,7 +69,7 @@ def test_startup_and_shutdown_manage_worker(monkeypatch):
     with TestClient(app) as client:
         assert calls==['start']
         assert client.get('/api/health').json()['status']=='ok'
-        assert client.get('/api/sources').json()['collection']['sources']==['hamrobazar','huku']
+        assert client.get('/api/sources').json()['collection']['sources']==['hamrobazar','huku','nepalbhoomi','gharjagganepal','nepalhomesearch','tradenepal']
     assert calls==['start',('stop',worker)]
 
 def test_disabled_startup_does_not_spawn():

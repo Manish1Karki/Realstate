@@ -1,4 +1,5 @@
-VisualTour/
+VisualTour/node_modules/
+VisualTour/dist/
 render.yaml
 aggregator/data/
 **/.venv/

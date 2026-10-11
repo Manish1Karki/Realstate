@@ -1,4 +1,4 @@
-import hashlib, json, re
+import hashlib, json, os, re
 import httpx
 from datetime import date
 from urllib.parse import urljoin, urlparse, urldefrag
@@ -8,6 +8,7 @@ from .http import Client, AccessError
 from .sources import SOURCES
 from .normalize import normalize, clean
 from .locking import single_job
+from .eligibility import is_recent_listing, has_property_information, nepal_today, six_month_cutoff
 
 def fields(soup):
     """Label/value semantics rather than brittle positional class selectors."""
@@ -36,6 +37,12 @@ def ld_items(value):
             if isinstance(value.get(key),(dict,list)): yield from ld_items(value[key])
 
 def parse_detail(html,url,source):
+    if SOURCES.get(source, {}).get('adapter') == 'public_sources':
+        from .public_sources import parse
+        return parse(html, url, source)
+    if source in ('epropertynepal','nepalbhoomi'):
+        from importlib import import_module
+        return import_module('.'+source, __package__).parse(html,url)
     if source=='huku':
         from .huku import parse
         return parse(html,url)
@@ -95,6 +102,23 @@ def parse_detail(html,url,source):
     from .media import enrich
     return enrich(item,html,url)
 
+def apply_public_location(item,html):
+    """Keep only coordinates explicitly published in this listing's public page."""
+    from .source_location import extract_public_coordinates
+    item=dict(item)
+    point=extract_public_coordinates(html)
+    if point:
+        item.update(lat=point[0],lng=point[1],geocode_status='matched',
+                    geocode_precision='source map pin (unverified)',
+                    geocode_label=item.get('address'),geo_error=None)
+    else:
+        item.update(lat=None,lng=None,geocode_status='pending',geocode_precision=None,
+                    geocode_label=None,geo_error=None,enrichment_status='pending',
+                    enrichment_radius_m=None,enriched_date=None,nearest_school=None,
+                    school_distance_km=None,nearest_hospital=None,hospital_distance_km=None,
+                    nearest_road=None,road_distance_km=None,amenity_count=None,amenity_score=None)
+    return item
+
 def discover(html,url,source):
     config=SOURCES[source]; soup=BeautifulSoup(html,'html.parser')
     links=[]; next_url=None
@@ -104,15 +128,33 @@ def discover(html,url,source):
         if parsed.scheme!='https' or parsed.hostname!=config['host']: continue
         if config.get('detail_pattern'):
             if re.fullmatch(config['detail_pattern'],parsed.path):
-                if source=='huku': target=parsed._replace(path=parsed.path.rstrip('/'),query='').geturl()
+                if source=='huku' or config.get('status') in ('local_trial','reviewed_public'): target=parsed._replace(path=parsed.path if config.get('canonical_trailing_slash') else parsed.path.rstrip('/'),query='').geturl()
                 links.append(target)
         elif config['detail_path'] and config['detail_path'] in parsed.path: links.append(target)
         rel=a.get('rel',[]); label=clean(a.get('aria-label') or a.get_text()).lower()
-        if 'next' in rel or label in ('next','next page','next »','»'): next_url=target
+        if 'next' in rel or label in ('next','next page','older posts','next '+chr(187),chr(187)):
+            current_path=urlparse(url).path.rstrip('/')
+            if parsed.path.rstrip('/')==current_path or re.fullmatch(re.escape(current_path)+r'/page/\d+/?',parsed.path):
+                next_url=target
     return list(dict.fromkeys(links)),next_url
 
 def review(source,client):
     config=SOURCES[source]
+    if config.get('status')=='reviewed_public':
+        age=(date.today()-date.fromisoformat(config['reviewed_on'])).days
+        if not 0<=age<=30: raise AccessError('Source review expired; inspect public pages again')
+        if config.get('terms_url'):
+            from .policy import public_terms_digest
+            if public_terms_digest(client.page(config['terms_url'],config['host'])) != config.get('terms_sha256'):
+                raise AccessError('Source policy changed; review required')
+        return
+    if config.get('status')=='local_trial':
+        from .sources import local_trials_enabled
+        if not local_trials_enabled():
+            raise AccessError('Experimental source disabled. Use the isolated local source trial; hosted collection is not enabled.')
+        age=(date.today()-date.fromisoformat(config['reviewed_on'])).days
+        if not 0<=age<=30: raise AccessError('Local trial inspection expired; inspect the source again')
+        return
     if config.get('status')=='public_html':
         from .policy import hamrobazar_terms_digest, huku_terms_digest
         age=(date.today()-date.fromisoformat(config['reviewed_on'])).days
@@ -143,28 +185,43 @@ def review(source,client):
 
 def scrape(source,max_pages=2,max_listings=20):
     if source not in SOURCES: raise ValueError('Unknown source')
-    if not 1<=max_pages<=10 or not 1<=max_listings<=100: raise ValueError('Use 1–10 pages and 1–100 listings per run')
+    if not 1<=max_pages<=30 or not 1<=max_listings<=300: raise ValueError('Use 1-30 pages and 1-300 listings per run')
     with single_job('scraper'):
         return _scrape(source,max_pages,max_listings)
 
 def _scrape(source,max_pages,max_listings):
-    c=Client(delay=3); report={'pages':0,'imported':0,'rejected':0,'skipped':0,'errors':[],'property_ids':[],'notes':[]}
+    c=Client(delay=3); report={'pages':0,'imported':0,'rejected':0,'skipped':0,'errors':[],'property_ids':[],'notes':[],'skip_reasons':{},'inspected':0}
     with connect() as con:
         run_id=con.execute("INSERT INTO runs(source,started_at,status) VALUES (?,?,'running')",(source,now())).lastrowid
     status='failed'
     try:
         review(source,c)
-        config=SOURCES[source]; url=config['start_url']; visited=set(); seen=set()
-        while url and url not in visited and report['pages']<max_pages and len(seen)<max_listings:
+        config=SOURCES[source]; pending=list(config.get('start_urls') or [config['start_url']]); visited=set(); seen=set()
+        if config.get('status')=='local_trial': report['notes'].append(config['reason'])
+        while pending and report['pages']<max_pages and len(seen)<max_listings:
+            url=pending.pop(0)
+            if url in visited: continue
             visited.add(url); html=c.page(url,config['host']); report['pages']+=1
             links,next_url=discover(html,url,source)
             if not links: raise ValueError('No detail links found; selectors or JS rendering need re-validation')
             for link in links:
                 if link in seen: continue
                 if len(seen)>=max_listings: break
-                seen.add(link)
+                seen.add(link); report['inspected']+=1
                 try:
-                    property_id=upsert(parse_detail(c.page(link,config['host']),link,source))
+                    detail_html=c.page(link,config['host'])
+                    item=parse_detail(detail_html,link,source)
+                    if not is_recent_listing(item):
+                        report['skipped']+=1
+                        reason='date_unknown' if not item.get('listing_date') else 'date_future' if item['listing_date']>nepal_today().isoformat() else 'older_than_six_months'
+                        report['skip_reasons'][reason]=report['skip_reasons'].get(reason,0)+1
+                        continue
+                    if not has_property_information(item):
+                        report['skipped']+=1
+                        report['skip_reasons']['missing_property_information']=report['skip_reasons'].get('missing_property_information',0)+1
+                        continue
+                    item=apply_public_location(item,detail_html)
+                    property_id=upsert(item)
                     report['imported']+=1;report['property_ids'].append(property_id)
                 except AccessError: raise
                 except Exception as e:
@@ -172,7 +229,7 @@ def _scrape(source,max_pages,max_listings):
                     if isinstance(e,OutOfScope):report['skipped']+=1
                     else:report['rejected']+=1;report['errors'].append({'url':link,'message':str(e)})
             if not next_url:report['notes'].append('No public next-page link present. Collected this HTML page only; no disallowed API pagination attempted.')
-            url=next_url
+            if next_url and next_url not in visited and next_url not in pending: pending.append(next_url)
         status='complete' if not report['errors'] else 'partial'
     except Exception as e:
         report['errors'].append({'message':str(e)})
@@ -181,4 +238,17 @@ def _scrape(source,max_pages,max_listings):
         c.close()
         with connect() as con:
             con.execute('UPDATE runs SET finished_at=?,status=?,pages=?,imported=?,rejected=?,errors=? WHERE id=?',(now(),status,report['pages'],report['imported'],report['rejected'],json.dumps(report['errors']),run_id))
+    if report['property_ids'] and os.getenv('LAND_AUTO_GEOCODE','false').lower()=='true':
+        try:
+            from .geo import geocode_pending
+            report['location_geocoding']=geocode_pending(max_listings,property_ids=report['property_ids'])
+        except Exception as exc:
+            report['location_geocoding']={'errors':[{'message':str(exc)}]}
+    if report['property_ids'] and os.getenv('LAND_AUTO_ENRICH','false').lower()=='true':
+        try:
+            from .geo import enrich
+            radius=int(os.getenv('LAND_AUTO_ENRICH_RADIUS','1500'))
+            report['location_enrichment']=enrich(max_listings,radius=radius,property_ids=report['property_ids'])
+        except Exception as exc:
+            report['location_enrichment']={'errors':[{'message':str(exc)}]}
     return dict(run_id=run_id,status=status,**report)

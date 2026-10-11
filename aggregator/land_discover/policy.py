@@ -25,3 +25,9 @@ def huku_terms_digest(html):
             sibling.extract()
         heading.extract()
     return hashlib.sha256(clean(content.get_text(' ',strip=True)).encode()).hexdigest()
+
+
+def public_terms_digest(html):
+    soup=BeautifulSoup(html,'html.parser')
+    for node in soup.select('script,style,nav,header,footer,form'): node.decompose()
+    return hashlib.sha256(clean((soup.find('main') or soup).get_text(' ',strip=True)).encode()).hexdigest()

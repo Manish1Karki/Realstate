@@ -4,11 +4,24 @@
   "type": "module",
   "engines": { "node": "24.x" },
   "scripts": {
-    "install:apps": "npm --prefix LandingPage ci && npm --prefix aggregator/frontend ci",
+    "install:apps": "npm ci && npm --prefix VisualTour ci",
     "build": "node scripts/build-prototype.mjs",
+    "build:next": "next build",
     "test:hosting": "node --test tests/hosting.test.mjs",
     "deploy:prototype": "node scripts/deploy-prototype.mjs",
+    "dev:web": "next dev",
     "dev:landing": "npm --prefix LandingPage run dev -- --host 127.0.0.1",
     "dev:aggregator": "npm --prefix aggregator/frontend run dev -- --base /aggregator/ --port 5174 --strictPort"
+  },
+  "dependencies": {
+    "next": "^16.0.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "typescript": "^5.9.0"
   }
 }

@@ -2,6 +2,7 @@ import './App.css'
 import LoginPage from './LoginPage'
 import PropertyDashboard from './PropertyDashboard'
 import AccountMenu from './AccountMenu'
+import AskingPriceRange from './AskingPriceRange'
 
 const DASHBOARD_URL = import.meta.env.VITE_DASHBOARD_URL || '/properties'
 
@@ -23,12 +24,13 @@ const features = [
 ]
 
 function App() {
+  if (window.location.pathname === '/asking-price') return <AskingPriceRange />
   if (window.location.pathname === '/login' || window.location.hash === '#login') return <LoginPage />
   if (window.location.pathname === '/properties' || window.location.pathname.startsWith('/properties/')) return <PropertyDashboard />
   return <div className="site-shell">
     <header className="nav-wrap">
       <a className="brand" href="#top"><span className="brand-mark"><Pin size={18} /></span><span>Land<span>Discover</span></span></a>
-      <nav><a href="#how">How it works</a><a href="/aggregator/">Aggregator</a><a href="#explore">Explore</a></nav>
+      <nav><a href="#how">How it works</a><a href="/aggregator/">Aggregator</a><a href="/asking-price">Asking-price range</a></nav>
       <div className="nav-actions"><AccountMenu signInClass="nav-signin" /><a className="nav-cta" href={DASHBOARD_URL}>Browse properties <Arrow /></a></div>
     </header>
 

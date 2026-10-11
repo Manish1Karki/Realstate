@@ -1,6 +1,7 @@
 import json
 import socket
 import pytest
+from land_discover.eligibility import nepal_today
 from fastapi.testclient import TestClient
 from land_discover.api import app
 from land_discover.http import AccessError, validate_public_url
@@ -8,7 +9,7 @@ from land_discover.scraper import parse_detail
 from land_discover.importer import links
 
 def fixture_html():
-    obj={'@type':'House','name':'House for sale','address':'Imadol, Lalitpur','offers':{'price':25000000,'priceCurrency':'NPR'},'image':['/house.jpg',{'url':'https://cdn.example.org/second.jpg'},'javascript:alert(1)'],'description':'A spacious family house.','numberOfBedrooms':4,'numberOfBathroomsTotal':2}
+    obj={'datePosted':nepal_today().isoformat(),'@type':'House','name':'House for sale','address':'Imadol, Lalitpur','offers':{'price':25000000,'priceCurrency':'NPR'},'image':['/house.jpg',{'url':'https://cdn.example.org/second.jpg'},'javascript:alert(1)'],'description':'A spacious family house.','numberOfBedrooms':4,'numberOfBathroomsTotal':2}
     return '<script type="application/ld+json">'+json.dumps(obj)+'</script>'
 
 def test_property_media_and_rooms():

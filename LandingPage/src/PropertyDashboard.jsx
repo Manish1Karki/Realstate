@@ -87,7 +87,7 @@ function PropertyDetails({ id, saved, toggleSaved }) {
     <p className="market-detail-note">Listing details and availability should be confirmed with the owner or original source.</p></div></section>
     <section className="market-location-panel" aria-labelledby="property-map-heading">
       <div className="market-location-heading"><p className="market-eyebrow">PROPERTY LOCATION</p><h2 id="property-map-heading">Map</h2><p>{property.area_name}, {property.district}</p></div>
-      <div className="market-map-placeholder"><div className="market-map-icon"><Symbol kind="pin" size={32} /></div><h3>Map coming soon</h3><p>The property location map will be available here.</p><span>MAP PLACEHOLDER</span></div>
+      <PropertyLocationMap property={property} />
     </section>
   </div>}</>
 }
@@ -125,7 +125,7 @@ export default function PropertyDashboard() {
   }
   const visible = items.filter(property => (!onlySaved || saved.includes(property.id)) && `${property.title} ${property.area_name} ${property.address} ${property.district}`.toLowerCase().includes(query.trim().toLowerCase()))
   return <div className="market-shell">
-    <header className="market-header"><a className="market-brand" href="/"><span><Symbol size={18} /></span><div>Land Discover<small>Find your place. Make it yours.</small></div></a><div className="market-header-actions"><AccountMenu signInClass="market-signin" /><button className="market-primary" onClick={() => setShowAdd(true)}>＋ <span>List a property</span></button></div></header>
+    <header className="market-header"><a className="market-brand" href="/"><span><Symbol size={18} /></span><div>Land Discover<small>Find your place. Make it yours.</small></div></a><div className="market-header-actions"><a className="market-signin" href="/asking-price">Asking-price range ↗</a><AccountMenu signInClass="market-signin" /><button className="market-primary" onClick={() => setShowAdd(true)}>＋ <span>List a property</span></button></div></header>
     <div className="market-body"><nav className="market-sidebar" aria-label="Marketplace navigation"><a className={!id && !onlySaved ? 'active' : ''} href="/properties" aria-label="Browse properties" title="Browse properties"><Symbol /></a><button className={onlySaved ? 'active' : ''} aria-label="Show saved properties" title="Saved properties" onClick={() => { if (id) window.location.assign('/properties?saved=1'); else { setOnlySaved(value => !value); setPage(1); setStatus('loading') } }}><Symbol kind="heart" /></button><a href="/" aria-label="About Land Discover" title="About Land Discover"><Symbol kind="grid" /></a><span className="market-sidebar-bottom">LD</span></nav>
     <main className={`market-main ${id ? 'market-main-details' : ''}`}>
       {id ? <PropertyDetails id={id} saved={saved} toggleSaved={toggleSaved} /> : <>
@@ -139,4 +139,13 @@ export default function PropertyDashboard() {
       </>}
     </main></div>{showAdd && <AddProperty onClose={() => setShowAdd(false)} onAdded={property => { window.location.assign(`/properties/${property.id}`) }} />}
   </div>
+}
+
+function PropertyLocationMap({ property }) {
+  const { lat, lng } = property
+  const hasPoint = Number.isFinite(lat) && Number.isFinite(lng) && lat >= 27.5 && lat <= 27.9 && lng >= 85.15 && lng <= 85.6
+  if (!hasPoint) return <div className="market-map-placeholder"><div className="market-map-icon"><Symbol kind="pin" size={32} /></div><h3>Location unavailable</h3><p>The original listing does not provide map coordinates.</p></div>
+  const src = `https://www.openstreetmap.org/export/embed.html?bbox=${lng - 0.012}%2C${lat - 0.008}%2C${lng + 0.012}%2C${lat + 0.008}&layer=mapnik&marker=${lat}%2C${lng}`
+  const link = `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lng}#map=16/${lat}/${lng}`
+  return <div className="market-location-map"><iframe title={`Map showing the location of ${property.title}`} src={src} loading="lazy" referrerPolicy="strict-origin-when-cross-origin" /><p>{property.address || `${property.area_name}, ${property.district}`}</p><a href={link} target="_blank" rel="noopener noreferrer">Open larger map</a><small>Map data <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap contributors</a></small></div>
 }

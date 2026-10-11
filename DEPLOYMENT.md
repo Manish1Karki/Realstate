@@ -1,35 +1,35 @@
-# Land Discover prototype on Vercel
+# Land Discover on Vercel
 
-The prototype publishes the three required parts under one Vercel website:
+The public site uses Next.js server rendering for search-facing pages; the FastAPI
+backend remains a separate service; collection tools are not published to customers:
 
 | Route | Feature |
 |---|---|
-| `/` | Landing page |
-| `/aggregator/` | Aggregator dashboard, collected properties, source status |
+| `/` | Server-rendered marketing page |
+| `/properties` | Server-rendered, filterable property results |
+| `/properties/:id` | Server-rendered listing details and metadata |
 | `/login` | Registration, login, account sessions |
-| `/properties` and `/properties/:id` | Public marketplace and property details |
 
-`VisualTour/` is excluded from the deployment upload and build. Property details
-include two sections: property information and a map placeholder. The live map
-will be added later.
+The build includes the property visual tour from VisualTour/. Public listings
+must be posted within six calendar months, contain property information, and have
+a property photo. A map pin is optional. Mapped listings are prioritized for both
+sale and rent. Missing locations show a contact panel; source-published pins can
+open the visual tour without substituting another location.
 
-Vercel serves the compiled website and a small same-origin API proxy. The existing
-FastAPI backend runs on Render's Free plan with a remote Turso libSQL database
-on Turso's Free plan. This preserves
+Vercel runs the Next.js application and a same-origin API proxy. The existing
+FastAPI backend runs on Render with a remote Turso libSQL database. This preserves
 accounts, sessions, and scraped listings across deployments and runs the existing
 background scraper on every backend restart. This setup deploys the user-facing
 system on Vercel; the backend and storage are separate services.
 
-The prototype is live at **https://land-discover-prototype.vercel.app**. Its backend
+The current prototype is live at **https://land-discover-prototype.vercel.app**. Its backend
 is `https://land-discover-api.onrender.com`, and persistent storage is the Turso
 libSQL database `land-discover-prototype`. All three services use free plans.
 Production secrets are configured in the providers, not in this repository.
 
-Hosted checks passed for registration, sessions, logout, login, page refreshes,
-frontend assets, property details, and exclusion of `/VisualTour/`. The first
-startup collected five Hamrobazar listings with photos. HUKU currently returns
-HTTP 403 to the hosted collector; the Data sources screen records that error.
-The steps below document how to recreate the deployment.
+The Next.js cutover has not been published. Deploy the FastAPI change first so
+the new `/api/sitemap` endpoint is available, then deploy the website. The current
+hosted app remains the Vite prototype until this cutover is intentionally published.
 
 ## 1. Publish application code
 
@@ -61,7 +61,7 @@ The Blueprint specifies:
 - Start: `uvicorn land_discover.api:app --host 0.0.0.0 --port $PORT`
 - Health check: `/api/health`
 - Database: the remote Turso libSQL database
-- Automatic scraping: one public HTML page and up to 20 listings per enabled source
+- Automatic scraping: six public index pages and up to 80 detail URLs per enabled source, every six hours
 - Secure session cookies and authenticated proxy access
 
 Choose free workspace/service/database plans, avoid paid trials or upgrades, and
@@ -91,15 +91,14 @@ Confirm `https://YOUR-BACKEND.onrender.com/api/health` returns `{"status":"ok"}`
 Import the same repository into Vercel using the **repository root (`.`)**.
 Do not select `LandingPage` as the project root for this combined prototype.
 
-- Framework preset: Other
+- Framework preset: Next.js
 - Node.js: 24.x
 - Install command: `npm run install:apps`
 - Build command: `npm run build`
-- Output directory: `dist`
 
 `vercel.json` includes these build settings and routes. The root build compiles
-the landing/login/marketplace app to `dist/`, then the aggregator to
-`dist/aggregator/`. Each app has its own asset paths.
+the visual tour assets and the Next.js application. Obsolete `public/aggregator/` assets are removed.
+Vercel serves the public marketplace without the research dashboard.
 
 Add these **server-side** Vercel environment variables:
 
@@ -107,33 +106,35 @@ Add these **server-side** Vercel environment variables:
 |---|---|
 | `BACKEND_API_URL` | Your Render backend HTTPS origin, such as `https://YOUR-BACKEND.onrender.com` |
 | `BACKEND_PROXY_SECRET` | The exact value of Render's `LAND_PROXY_SECRET` |
+| `NEXT_PUBLIC_SITE_URL` | The canonical public HTTPS origin, such as `https://your-domain.example` |
 
-Set them for Production and, if desired, Preview. Do not use `VITE_` prefixes
-for either value. Leave `VITE_AUTH_API_URL`, `VITE_PROPERTY_API_URL`, and
-`VITE_GOOGLE_AUTH_URL` unset; leave `VITE_DASHBOARD_URL` unset or `/properties`.
-The browser calls `/api` on its own website origin. The proxy forwards API
-responses and session cookies; users stay on the Vercel website.
+Set the variables for Production and Preview as needed. `BACKEND_PROXY_SECRET`
+is server-only. Next.js uses the backend URL and secret for server-rendered public
+listing pages; browser account and form requests go through the same-origin
+`/api` proxy. Set `NEXT_PUBLIC_SITE_URL` to the final canonical domain before
+building so generated canonical and sitemap URLs match production.
 
 Deploy, then set Render's public URL/origin variables to the resulting Vercel
 origin. [Vercel rewrite documentation](https://vercel.com/docs/routing/rewrites)
 
 ## 4. Verify the hosted prototype
 
-1. Open `/`, `/aggregator/`, and `/login`, including direct page refreshes.
-2. Create a test account, confirm its name appears in the marketplace header,
-   sign out, then sign in again.
-3. Check the aggregator's Data sources page for Hamrobazar and HUKU collection.
+1. Open `/`, `/properties`, a property detail URL, `/login`, and `/dashboard`.
+2. Create a test account, confirm its name links to the dashboard, update profile
+   details, sign out, and sign in again. Check the forgot-password flow after mail
+   delivery is configured. Save a listing, submit an owner listing, and confirm it opens.
+3. Check backend collection status using `/api/sources` with the administrator token. Confirm `/aggregator` returns 404.
 4. Open a property and check its image, description, price, and source.
 5. Redeploy the backend, then confirm the test account and existing listings
    still exist. A backend restart starts another bounded collection cycle.
-6. Confirm the visual-tour project is not served.
+6. Confirm the visual tour opens for source-mapped listings and removed pages return 404.
 
 New hosting starts with an empty database. The scraper supplies new listings,
 and testers create new accounts. To carry over local records, transfer a
 reviewed database migration explicitly into Turso; never commit or
 publish the account database as a website asset.
 
-Password reset is hidden until backend mail delivery is configured (Render's
+Password reset and email-change verification require backend mail delivery to be configured (Render's
 free service blocks common SMTP ports). Google
 OAuth is not part of the email/password prototype. Source reviews still expire
 after 30 days; a changed or expired policy review appears as a collection error
@@ -151,7 +152,7 @@ npm.cmd run deploy:prototype
 
 The script prepares a clean upload containing application sources and project
 link metadata, then runs the Vercel production deployment. It excludes local
-databases, environment files, dependencies, caches, and VisualTour. This also
+databases, environment files, dependencies, caches, and generated build output. This also
 avoids a Windows permission error when the CLI scans the local Python cache.
 Use `npm.cmd run deploy:prototype -- --prepare-only` to inspect the upload without
 publishing it. On another
@@ -169,9 +170,9 @@ secrets out of frontend code and the repository.
 ## Local development and checks
 
 Start the backend using `aggregator/start.ps1`. In separate terminals at the
-repository root, run `npm run dev:landing` and `npm run dev:aggregator`.
-Open `http://127.0.0.1:5173/`; its aggregator link goes through the local Vite
-proxy to port 5174. Keep `LAND_REQUIRE_PROXY=false` locally.
+repository root, run `npm run dev:web`.
+Open `http://localhost:3000/`. Next proxies `/api` to FastAPI on port 8000. Keep
+`LAND_REQUIRE_PROXY=false` locally.
 
 Before committing:
 

@@ -60,9 +60,16 @@ def extract_address(title,description):
 
 def posted_date(raw,scraped_at):
     value=clean(raw).lower().removeprefix('posted').strip()
-    match=re.fullmatch(r'(\d+)\s+(minute|hour|day|week)s?\s+ago',value)
+    match=re.fullmatch(r'(\d+)\s+(minute|hour|day|week|month|year)s?\s+ago',value)
     if not match:return None
-    seconds=int(match[1])*{'minute':60,'hour':3600,'day':86400,'week':604800}[match[2]]
+    count=int(match[1]); unit=match[2]
+    local=scraped_at.astimezone(timezone(timedelta(hours=5,minutes=45)))
+    if unit in ('month','year'):
+        from calendar import monthrange
+        year,month=divmod(local.year*12+local.month-1-count*(12 if unit=='year' else 1),12)
+        month+=1
+        return local.date().replace(year=year,month=month,day=min(local.day,monthrange(year,month)[1])).isoformat()
+    seconds=count*{'minute':60,'hour':3600,'day':86400,'week':604800}[unit]
     return (scraped_at-timedelta(seconds=seconds)).astimezone(timezone(timedelta(hours=5,minutes=45))).date().isoformat()
 
 def parse(html,url,scraped_at=None):

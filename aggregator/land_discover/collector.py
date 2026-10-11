@@ -6,7 +6,7 @@ import subprocess
 import sys
 from .db import ROOT, connect, init_db, now
 from .locking import single_job
-from .sources import SOURCES
+from .sources import SOURCES, source_enabled
 from .scraper import scrape
 
 log=logging.getLogger(__name__)
@@ -15,14 +15,17 @@ def enabled():
     return os.getenv('LAND_AUTO_SCRAPE','true').strip().lower() not in ('0','false','no','off')
 
 def auto_sources():
-    return [key for key,config in SOURCES.items() if config.get('auto_collect') and config.get('adapter')]
+    return [key for key in SOURCES if source_enabled(key)]
 
 def limit(name,default,maximum):
     try: value=int(os.getenv(name,str(default)))
     except ValueError: value=default
     return max(1,min(value,maximum))
 
-def collect_all():
+def collect_all(sources=None):
+    selected=auto_sources() if sources is None else list(dict.fromkeys(sources))
+    if not selected or any(source not in SOURCES or not source_enabled(source) for source in selected):
+        raise ValueError('Choose enabled collection sources')
     init_db()
     with single_job('automatic_collection'):
         with connect() as con:
@@ -32,11 +35,11 @@ def collect_all():
             cycle_id=con.execute("INSERT INTO collection_cycles(started_at,status) VALUES (?,'running')",(now(),)).lastrowid
         reports=[]
         try:
-            for source in auto_sources():
+            for source in selected:
                 with connect() as con:
                     con.execute('UPDATE collection_cycles SET current_source=? WHERE id=?',(source,cycle_id))
                 log.info('Collecting %s',source)
-                try: report=scrape(source,limit('LAND_AUTO_SCRAPE_PAGES',2,10),limit('LAND_AUTO_SCRAPE_LIMIT',20,100))
+                try: report=scrape(source,limit('LAND_AUTO_SCRAPE_PAGES',6,30),limit('LAND_AUTO_SCRAPE_LIMIT',80,300))
                 except Exception as exc: report={'status':'failed','imported':0,'errors':[{'message':str(exc)}]}
                 reports.append(dict(source=source,**report))
                 with connect() as con:
@@ -56,7 +59,7 @@ def start_worker():
     path=ROOT/'data'/'automatic-collection.log'
     path.parent.mkdir(parents=True,exist_ok=True)
     with path.open('a',encoding='utf-8') as output:
-        process=subprocess.Popen([sys.executable,'-m','land_discover.collector'],cwd=ROOT,stdout=output,stderr=subprocess.STDOUT,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
+        process=subprocess.Popen([sys.executable,'-m','land_discover.collector','--watch'],cwd=ROOT,stdout=output,stderr=subprocess.STDOUT,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
     log.info('Automatic collection started (process %s)',process.pid)
     return process
 
@@ -74,9 +77,15 @@ def collection_status():
     return dict(enabled=enabled(),sources=auto_sources(),cycle=cycle)
 
 if __name__=='__main__':
+    import time
     logging.basicConfig(level=logging.INFO,format='%(asctime)s %(levelname)s %(message)s')
-    try:
-        result=collect_all()
-        log.info('Automatic collection finished: %s',result['status'])
-    except RuntimeError as exc:
-        log.warning('%s',exc)
+    while True:
+        try:
+            result=collect_all()
+            log.info('Automatic collection finished: %s',result['status'])
+        except Exception as exc:
+            log.exception('Collection cycle failed: %s',exc)
+        if '--watch' not in sys.argv: break
+        delay=limit('LAND_AUTO_SCRAPE_INTERVAL_HOURS',6,168)*3600
+        log.info('Next collection cycle in %s hours',delay//3600)
+        time.sleep(delay)

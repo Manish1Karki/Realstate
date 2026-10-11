@@ -399,6 +399,10 @@ function PropertyCard({ property, onSelect }) {
               <Hospital size={15} />
               {km(property.hospital_distance_km)}
             </span>
+            <span>
+              <Route size={15} />
+              {km(property.road_distance_km)}
+            </span>
           </div>
           <div className="property-card-footer">
             <span className="tag">{property.source}</span>
@@ -668,7 +672,8 @@ function App() {
                       </span>
                     </div>
                     <h2>{s.name}</h2>
-                    <p><strong>{s.listing_count || 0}</strong> saved listings ? {s.auto_collect ? "Automatic on startup" : "Not enabled"}</p>
+                    <p><strong>{s.collected_count ?? s.listing_count ?? 0}</strong> collected · <strong>{s.qualified_count || 0}</strong> listed within six months</p>
+                    <p>{s.auto_collect ? "Automatic on startup" : "Collection disabled"}</p>
                     <p>{s.reason}</p>
                     {s.terms_url && (
                       <a href={s.terms_url} target="_blank" rel="noreferrer">
@@ -1021,8 +1026,8 @@ function App() {
                     <h3>No properties in this selection</h3>
                     <p>
                       {dataset === "live"
-                        ? "Import a permitted dataset or complete source validation before collecting listings."
-                        : "Try clearing a few filters to see more properties."}
+                        ? "Listings must have an original listing date within the past six months. A map pin is optional."
+                        : "No recent synthetic examples match these filters."}
                     </p>
                   </div>
                 ) : (

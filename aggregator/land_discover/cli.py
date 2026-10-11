@@ -10,6 +10,7 @@ def main():
     scrape=sub.add_parser('scrape'); scrape.add_argument('source'); scrape.add_argument('--pages',type=int,default=2); scrape.add_argument('--limit',type=int,default=20); scrape.add_argument('--csv',default='data/listings.csv')
     export=sub.add_parser('export');export.add_argument('path');export.add_argument('--source')
     geo=sub.add_parser('enrich'); geo.add_argument('--limit',type=int,default=10); geo.add_argument('--radius',type=int,default=1500); geo.add_argument('--retry',action='store_true')
+    locate=sub.add_parser('geocode'); locate.add_argument('--limit',type=int,default=100); locate.add_argument('--retry',action='store_true')
     imp=sub.add_parser('import-csv'); imp.add_argument('path'); imp.add_argument('--source',required=True)
     parse=sub.add_parser('parse-html'); parse.add_argument('path'); parse.add_argument('--source',required=True); parse.add_argument('--url',required=True)
     args=p.parse_args(); init_db()
@@ -32,6 +33,10 @@ def main():
         from .geo import enrich
         if not 1<=args.limit<=100: p.error('Use 1–100 properties per one-time batch')
         result=enrich(args.limit,args.radius,args.retry)
+    elif args.command=='geocode':
+        from .geo import geocode_pending
+        if not 1<=args.limit<=100: p.error('Use 1-100 properties per serial geocoding batch')
+        result=geocode_pending(args.limit,args.retry)
     elif args.command=='parse-html':
         from .scraper import parse_detail
         result=parse_detail(Path(args.path).read_text(encoding='utf-8'),args.url,args.source)

@@ -1,6 +1,7 @@
 """Database-backed accounts and opaque, revocable HttpOnly sessions."""
 import hashlib
 import hmac
+import ipaddress
 import os
 import re
 import secrets
@@ -59,13 +60,50 @@ class EmailRequest(BaseModel):
     email: str = Field(min_length=3,max_length=254)
     _normalize=field_validator('email')(Credentials.email_address.__func__)
 
+class LocalResetRequest(EmailRequest):
+    password: str = Field(min_length=8,max_length=128)
+
 class ResetRequest(BaseModel):
     token: str = Field(min_length=20,max_length=200)
     password: str = Field(min_length=8,max_length=128)
 
+class TokenRequest(BaseModel):
+    token: str = Field(min_length=20,max_length=200)
+
+class ProfileUpdate(BaseModel):
+    display_name: str = Field(default='',max_length=120)
+    phone_number: str = Field(default='',max_length=32)
+    alternate_phone: str = Field(default='',max_length=32)
+
+    @field_validator('display_name')
+    @classmethod
+    def clean_name(cls,value): return value.strip()
+
+    @field_validator('phone_number','alternate_phone')
+    @classmethod
+    def phone_format(cls,value):
+        value=value.strip()
+        if value and not re.fullmatch(r'[+\d().\-\s]{5,32}',value): raise ValueError('Enter a valid phone number')
+        return value
+
+class PasswordChange(BaseModel):
+    current_password: str = Field(min_length=1,max_length=128)
+    new_password: str = Field(min_length=8,max_length=128)
+
+class EmailChangeRequest(BaseModel):
+    email: str = Field(min_length=3,max_length=254)
+    current_password: str = Field(min_length=1,max_length=128)
+
+    @field_validator('email')
+    @classmethod
+    def email_address(cls,value):
+        value=value.strip().lower()
+        if not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+',value): raise ValueError('Enter a valid email address')
+        return value
+
 def check_origin(request):
     from .hosting import trusted_proxy
-    allowed={v.strip().rstrip('/') for v in os.getenv('LAND_AUTH_ORIGINS','http://127.0.0.1:5173,http://localhost:5173,http://127.0.0.1:8000,http://localhost:8000').split(',')}
+    allowed={v.strip().rstrip('/') for v in os.getenv('LAND_AUTH_ORIGINS','http://127.0.0.1:3000,http://localhost:3000,http://127.0.0.1:5173,http://localhost:5173,http://127.0.0.1:8000,http://localhost:8000').split(',')}
     origin=request.headers.get('origin')
     if trusted_proxy(request):
         frontend=request.headers.get('x-land-frontend-origin','')
@@ -95,7 +133,7 @@ def throttle(request,email=''):
     if blocked: raise HTTPException(429,'Too many attempts. Try again in 15 minutes.',headers={'Retry-After':'900'})
 
 def public_user(row):
-    return {key:row[key] for key in ('id','email','display_name','created_at','last_login_at')}
+    return {key:row[key] for key in ('id','email','display_name','phone_number','alternate_phone','created_at','last_login_at')}
 
 def require_user(request:Request):
     token=request.cookies.get(COOKIE,'')
@@ -145,6 +183,81 @@ def me(response:Response,user=Depends(require_user)):
     response.headers['Cache-Control']='no-store'
     return {'user':user}
 
+@router.patch('/me')
+def update_profile(body:ProfileUpdate,request:Request,user=Depends(require_user)):
+    check_origin(request)
+    with connect() as con:
+        con.execute('UPDATE users SET display_name=?,phone_number=?,alternate_phone=? WHERE id=?',
+                    (body.display_name,body.phone_number,body.alternate_phone,user['id']))
+        updated=con.execute('SELECT * FROM users WHERE id=?',(user['id'],)).fetchone()
+    return {'user':public_user(updated),'message':'Profile updated.'}
+
+@router.post('/change-password')
+def change_password(body:PasswordChange,request:Request,user=Depends(require_user)):
+    check_origin(request); throttle(request,user['email'])
+    with connect() as con:
+        current=con.execute('SELECT password_hash FROM users WHERE id=?',(user['id'],)).fetchone()
+    if not current or not verify_password(body.current_password,current['password_hash']):
+        raise HTTPException(401,'Your current password is incorrect.')
+    encoded=hash_password(body.new_password)
+    token=request.cookies.get(COOKIE,'')
+    with connect() as con:
+        con.execute('BEGIN IMMEDIATE')
+        con.execute('UPDATE users SET password_hash=? WHERE id=?',(encoded,user['id']))
+        con.execute('DELETE FROM user_sessions WHERE user_id=? AND token_hash<>?',(user['id'],digest(token)))
+        con.execute('DELETE FROM password_resets WHERE user_id=?',(user['id'],))
+        con.execute('DELETE FROM email_changes WHERE user_id=?',(user['id'],))
+    return {'message':'Password changed. Other signed-in sessions have been ended.'}
+
+def send_email(to_address,subject,body):
+    message=EmailMessage()
+    message['Subject']=subject
+    message['From']=os.environ['LAND_MAIL_FROM']; message['To']=to_address
+    message.set_content(body)
+    with smtplib.SMTP(os.environ['LAND_SMTP_HOST'],int(os.getenv('LAND_SMTP_PORT','587')),timeout=15) as smtp:
+        smtp.starttls()
+        if os.getenv('LAND_SMTP_USER'): smtp.login(os.environ['LAND_SMTP_USER'],os.getenv('LAND_SMTP_PASSWORD',''))
+        smtp.send_message(message)
+
+@router.post('/request-email-change')
+def request_email_change(body:EmailChangeRequest,request:Request,user=Depends(require_user)):
+    check_origin(request); throttle(request,body.email)
+    if not reset_available(): raise HTTPException(503,'Email verification is not configured yet')
+    with connect() as con:
+        row=con.execute('SELECT password_hash,email FROM users WHERE id=?',(user['id'],)).fetchone()
+        if not verify_password(body.current_password,row['password_hash']):
+            raise HTTPException(401,'Your current password is incorrect.')
+        if body.email==row['email']:
+            raise HTTPException(400,'That is already the email address on your account.')
+        if con.execute('SELECT 1 FROM users WHERE email=?',(body.email,)).fetchone():
+            raise HTTPException(409,'An account with that email already exists.')
+        token=secrets.token_urlsafe(32)
+        con.execute('DELETE FROM email_changes WHERE user_id=? OR expires_at<=?',(user['id'],time.time()))
+        con.execute('INSERT INTO email_changes VALUES (?,?,?,?)',(digest(token),user['id'],body.email,time.time()+1800))
+    origin=os.getenv('LAND_PUBLIC_URL','http://127.0.0.1:3000').rstrip('/')
+    try:
+        send_email(body.email,'Confirm your Land Discover email address',
+                   f'Confirm this email address for your Land Discover account within 30 minutes:\n{origin}/dashboard?verify_email={token}\n\nIf you did not request this, ignore this email.')
+    except (OSError,smtplib.SMTPException):
+        with connect() as con: con.execute('DELETE FROM email_changes WHERE token_hash=?',(digest(token),))
+        raise HTTPException(503,'We could not send the verification email. Please try again later.')
+    return {'message':'A verification link has been sent to your new email address.'}
+
+@router.post('/confirm-email')
+def confirm_email(body:TokenRequest,request:Request):
+    check_origin(request); throttle(request)
+    try:
+        with connect() as con:
+            con.execute('BEGIN IMMEDIATE')
+            pending=con.execute('SELECT user_id,new_email FROM email_changes WHERE token_hash=? AND expires_at>?',(digest(body.token),time.time())).fetchone()
+            if not pending: raise HTTPException(400,'This verification link is invalid or expired. Request a new one.')
+            con.execute('UPDATE users SET email=? WHERE id=?',(pending['new_email'],pending['user_id']))
+            con.execute('DELETE FROM email_changes WHERE user_id=?',(pending['user_id'],))
+            updated=con.execute('SELECT * FROM users WHERE id=?',(pending['user_id'],)).fetchone()
+    except sqlite3.IntegrityError:
+        raise HTTPException(409,'An account with that email already exists.')
+    return {'user':public_user(updated),'message':'Email address updated.'}
+
 @router.post('/logout',status_code=204)
 def logout(request:Request,response:Response):
     check_origin(request)
@@ -157,11 +270,37 @@ def logout(request:Request,response:Response):
 def reset_available():
     return bool(os.getenv('LAND_SMTP_HOST') and os.getenv('LAND_MAIL_FROM'))
 
+def local_password_reset_available(request):
+    if os.getenv('LAND_LOCAL_PASSWORD_RESET','false').lower()!='true': return False
+    if os.getenv('LAND_REQUIRE_PROXY','false').lower()=='true': return False
+    if os.getenv('TURSO_DATABASE_URL') or os.getenv('TURSO_AUTH_TOKEN'): return False
+    try:
+        return bool(request.client and ipaddress.ip_address(request.client.host).is_loopback)
+    except ValueError:
+        return False
+
 @router.get('/config')
-def config(): return {'password_reset_available':reset_available()}
+def config(request:Request):
+    return {'password_reset_available':reset_available(),
+            'local_password_reset_available':local_password_reset_available(request)}
+
+@router.post('/local-reset-password')
+def local_reset_password(body:LocalResetRequest,request:Request):
+    if not local_password_reset_available(request): raise HTTPException(404,'Not found')
+    check_origin(request); throttle(request)
+    encoded=hash_password(body.password)
+    with connect() as con:
+        con.execute('BEGIN IMMEDIATE')
+        user=con.execute('SELECT id FROM users WHERE email=?',(body.email,)).fetchone()
+        if not user: raise HTTPException(404,'No account was found for that email address.')
+        con.execute('UPDATE users SET password_hash=? WHERE id=?',(encoded,user['id']))
+        con.execute('DELETE FROM user_sessions WHERE user_id=?',(user['id'],))
+        con.execute('DELETE FROM password_resets WHERE user_id=?',(user['id'],))
+        con.execute('DELETE FROM email_changes WHERE user_id=?',(user['id'],))
+    return {'message':'Password changed. You can now sign in.'}
 
 def send_reset(email,token):
-    origin=os.getenv('LAND_PUBLIC_URL','http://127.0.0.1:5173').rstrip('/')
+    origin=os.getenv('LAND_PUBLIC_URL','http://127.0.0.1:3000').rstrip('/')
     message=EmailMessage()
     message['Subject']='Reset your Land Discover password'
     message['From']=os.environ['LAND_MAIL_FROM']; message['To']=email

@@ -1,13 +1,14 @@
 """Bounded imports from user-supplied public property pages."""
-import json
+import json, os
 import re
 from urllib.parse import urlparse, urljoin, urldefrag
 from bs4 import BeautifulSoup
 from .db import connect, now, upsert
 from .http import Client, AccessError, validate_public_url
 from .locking import single_job
-from .scraper import parse_detail, review
+from .scraper import parse_detail, review, apply_public_location
 from .sources import SOURCES
+from .eligibility import is_recent_listing
 
 def links(html, url, host):
     soup=BeautifulSoup(html,'html.parser')
@@ -28,7 +29,7 @@ def import_url(url, max_pages=1, max_listings=10):
     host=urlparse(url).hostname
     source=next((key for key,config in SOURCES.items() if config['host']==host),host)
     client=Client(delay=3,public_only=True)
-    report=dict(pages=0,imported=0,rejected=0,errors=[],property_ids=[])
+    report=dict(pages=0,imported=0,rejected=0,skipped=0,errors=[],property_ids=[])
     with single_job('scraper'):
         with connect() as con:
             run_id=con.execute("INSERT INTO runs(source,started_at,status) VALUES (?,?,'running')",(source,now())).lastrowid
@@ -39,9 +40,13 @@ def import_url(url, max_pages=1, max_listings=10):
             while page and page not in visited and report['pages']<max_pages and len(seen)<max_listings:
                 visited.add(page)
                 html=client.page(page,host); report['pages']+=1
-                try: item=parse_detail(html,page,source)
+                try: item=apply_public_location(parse_detail(html,page,source),html)
                 except ValueError: item=None
                 if item is not None:
+                    if not is_recent_listing(item):
+                        report['skipped']+=1
+                        report['errors'].append(dict(url=page,message='Listing date unknown, future, or older than six months'))
+                        break
                     report['property_ids'].append(upsert(item)); report['imported']+=1
                     break
                 candidates,page_next=links(html,page,host)
@@ -51,7 +56,11 @@ def import_url(url, max_pages=1, max_listings=10):
                     if len(seen)>=max_listings: break
                     seen.add(target)
                     try:
-                        item=parse_detail(client.page(target,host),target,source)
+                        detail_html=client.page(target,host)
+                        item=apply_public_location(parse_detail(detail_html,target,source),detail_html)
+                        if not is_recent_listing(item):
+                            report['skipped']+=1
+                            continue
                         report['property_ids'].append(upsert(item)); report['imported']+=1
                     except AccessError: raise
                     except ValueError as exc:
@@ -63,4 +72,11 @@ def import_url(url, max_pages=1, max_listings=10):
             client.close()
             with connect() as con:
                 con.execute('UPDATE runs SET finished_at=?,status=?,pages=?,imported=?,rejected=?,errors=? WHERE id=?',(now(),status,report['pages'],report['imported'],report['rejected'],json.dumps(report['errors']),run_id))
+    if report['property_ids'] and os.getenv('LAND_AUTO_ENRICH','false').lower()=='true':
+        try:
+            from .geo import enrich
+            radius=int(os.getenv('LAND_AUTO_ENRICH_RADIUS','1500'))
+            report['location_enrichment']=enrich(max_listings,radius=radius,property_ids=report['property_ids'])
+        except Exception as exc:
+            report['location_enrichment']={'errors':[{'message':str(exc)}]}
     return dict(run_id=run_id,status=status,**report)

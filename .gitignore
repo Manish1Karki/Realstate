@@ -13,5 +13,14 @@ aggregator/data/*
 !aggregator/data/.gitkeep
 aggregator/frontend/dist/
 dist/
+.next/
+next-env.d.ts
+public/aggregator/
 .vercel/
 aggregator/source_reviews.json
+
+public/visual-tour/
+
+*.tsbuildinfo
+VisualTour/node_modules/
+VisualTour/dist/

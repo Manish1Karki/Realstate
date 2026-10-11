@@ -53,11 +53,12 @@ def parse_price(raw, size_sqft=None):
 def parse_date(raw):
     raw=clean(raw)
     # Do not guess relative timestamps or Bikram Sambat calendar dates.
-    match=re.search(r'\b(20\d{2}-\d{2}-\d{2})\b',raw)
+    match=re.search(r'\b(20\d{2}-\d{2}-\d{2})(?!\d)',raw)
     if not match: return None
     try:
         d=date.fromisoformat(match[1])
-        return d.isoformat() if d<=date.today() else None
+        from .eligibility import nepal_today
+        return d.isoformat() if d<=nepal_today() else None
     except ValueError: return None
 
 def normalize(raw):

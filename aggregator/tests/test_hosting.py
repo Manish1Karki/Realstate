@@ -27,6 +27,18 @@ def test_manual_import_requires_admin_token_in_hosted_mode(monkeypatch):
     headers={'X-Land-Proxy-Token':'test-proxy-secret'}
     monkeypatch.setattr('land_discover.importer.import_url',lambda *a: {'status':'complete','imported':1})
     with TestClient(app) as client:
-        assert client.post('/api/import',json={'url':'https://example.org/property/1'},headers=headers).status_code==403
-        headers['X-Land-Import-Token']='test-admin-token'
+        assert client.post('/api/import',json={'url':'https://example.org/property/1'},headers=headers).status_code==404
+        headers={'X-Land-Import-Token':'test-admin-token'}
         assert client.post('/api/import',json={'url':'https://example.org/property/1'},headers=headers).status_code==200
+
+
+def test_collection_tools_are_backend_only(monkeypatch):
+    monkeypatch.setenv('LAND_REQUIRE_PROXY', 'true')
+    monkeypatch.setenv('LAND_PROXY_SECRET', 'test-proxy-secret')
+    monkeypatch.setenv('LAND_IMPORT_TOKEN', 'test-admin-token')
+    with TestClient(app) as client:
+        assert client.get('/').status_code == 404
+        assert client.get('/api/sources').status_code == 403
+        assert client.get('/api/sources', headers={'X-Land-Proxy-Token': 'test-proxy-secret'}).status_code == 404
+        assert client.get('/api/sources', headers={'Origin': 'https://website.example', 'X-Land-Import-Token': 'test-admin-token'}).status_code == 404
+        assert client.get('/api/sources', headers={'X-Land-Import-Token': 'test-admin-token'}).status_code == 200

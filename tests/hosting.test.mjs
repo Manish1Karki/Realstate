@@ -65,13 +65,17 @@ test('upstream failure does not expose backend details or secrets', async () => 
   assert.ok(!res.text().includes(env.BACKEND_PROXY_SECRET));
 });
 
-test('compiled prototype includes landing, aggregator, login and excludes VisualTour', () => {
-  const landing = readFileSync(new URL('../dist/index.html', import.meta.url), 'utf8');
-  const aggregator = readFileSync(new URL('../dist/aggregator/index.html', import.meta.url), 'utf8');
-  assert.match(landing, /\/assets\//);
-  assert.match(aggregator, /\/aggregator\/assets\//);
-  assert.ok(!existsSync(new URL('../dist/VisualTour', import.meta.url)));
+test('public proxy refuses collection endpoints without contacting the backend', async () => {
+  const proxy = createProxy({ env, fetchImpl: () => { throw new Error('Must not be called'); } });
+  for (const path of ['sources', 'import', '%73ources', 'properties/../sources']) {
+    const res = response();
+    await proxy(request({ query: { path }, url: `/api/${path}` }), res);
+    assert.equal(res.statusCode, 404);
+  }
+});
+
+test('public hosting does not publish the research dashboard', () => {
   const config = JSON.parse(readFileSync(new URL('../vercel.json', import.meta.url), 'utf8'));
-  for (const path of ['/login', '/properties', '/aggregator']) assert.ok(config.rewrites.some(route => route.source === path));
-  assert.ok(!config.rewrites.some(route => /tour/i.test(route.source)));
+  assert.ok(!config.rewrites.some(route => route.source.startsWith('/aggregator')));
+  assert.ok(!existsSync(new URL('../public/aggregator', import.meta.url)));
 });

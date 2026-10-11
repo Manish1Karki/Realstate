@@ -20,6 +20,9 @@ export function createProxy({ fetchImpl = fetch, env = process.env } = {}) {
       for (const [key, value] of incoming.searchParams) if (key !== 'path') upstream.searchParams.append(key, value);
     } catch { error(400, 'Invalid service request.'); return; }
 
+    // Collection controls and operational status are backend-only.
+    if (/^\/api\/(?:sources|import)(?:\/|$)/.test(decodeURIComponent(upstream.pathname))) { error(404, 'Not found.'); return; }
+
     const host = req.headers.host;
     if (!host || !/^[a-zA-Z0-9.:-]+$/.test(host)) { error(400, 'Invalid website host.'); return; }
     const origin = `${env.VERCEL ? 'https' : 'http'}://${host}`;

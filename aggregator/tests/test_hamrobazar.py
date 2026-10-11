@@ -52,4 +52,5 @@ def test_crawl_end_to_end_with_mocked_network(monkeypatch,tmp_path):
     report=scrape('hamrobazar',2,10)
     assert report['imported']==2 and report['pages']==2 and len(calls)==4
     exported=export_properties(tmp_path/'out.csv','hamrobazar',report['property_ids'])
-    assert exported['rows']==2
+    # These synthetic source pages contain no photos, so they stay backend-only.
+    assert exported['rows']==0
