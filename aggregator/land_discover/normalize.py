@@ -63,7 +63,9 @@ def parse_date(raw):
 
 def normalize(raw):
     title=clean(raw.get('title')); address=clean(raw.get('address'))
-    district=next((d for d in DISTRICTS if d.lower() in address.lower()),None)
+    matches=[d for d in DISTRICTS if re.search(r'\b'+d+r'\b',address,re.I)]
+    if len(matches)>1: raise ValueError('Conflicting advertised districts; review the source address')
+    district=matches[0] if matches else None
     if not title or not address or not district: raise ValueError('Missing title/address or outside Kathmandu Valley')
     kind=clean(raw.get('property_type')).lower()
     if kind not in ('land','house','apartment'): raise ValueError('Unsupported or unknown property type')

@@ -2,7 +2,7 @@
 import csv
 from pathlib import Path
 from .db import connect
-from .eligibility import qualified_where
+from .eligibility import public_where
 
 def safe(value):
     if isinstance(value,str) and value.lstrip().startswith(('=','+','-','@','\t','\r')):
@@ -11,7 +11,7 @@ def safe(value):
 
 def export_properties(path,source=None,ids=None):
     target=Path(path);target.parent.mkdir(parents=True,exist_ok=True)
-    clauses=['is_demo=0',qualified_where()];args=[]
+    clauses=['is_demo=0',public_where()];args=[]
     if source:
         clauses.append('source=?');args.append(source)
     if ids is not None:

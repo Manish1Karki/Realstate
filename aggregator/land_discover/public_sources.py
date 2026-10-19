@@ -54,7 +54,7 @@ def parse(html, url, source):
     else:
         if not listing: raise ValueError('RealEstateListing schema missing')
         offers = listing.get('offers', {})
-        if offers.get('priceCurrency') != 'NPR': raise ValueError('Unsupported currency')
+        if offers.get('price') not in (None, '') and offers.get('priceCurrency') != 'NPR': raise ValueError('Unsupported currency')
         price = str(offers.get('price') or '')
         kind_text = title
         transaction_text = title + ' ' + str(offers.get('businessFunction', ''))

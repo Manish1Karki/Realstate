@@ -52,7 +52,14 @@ def collect_all(sources=None):
         finally:
             with connect() as con:
                 con.execute('UPDATE collection_cycles SET finished_at=?,status=?,current_source=NULL,reports=? WHERE id=?',(now(),status,json.dumps(reports),cycle_id))
-        return dict(id=cycle_id,status=status,reports=reports)
+        from .photos import validate_pending
+        try: photo_validation = validate_pending(limit('LAND_PHOTO_CHECK_LIMIT',40,100))
+        except Exception:
+            log.exception('Photo validation deferred')
+            photo_validation = {'deferred':True}
+        from .archive import sync_if_enabled
+        property_archive = sync_if_enabled(download=True)
+        return dict(id=cycle_id,status=status,reports=reports,photo_validation=photo_validation,property_archive=property_archive)
 
 def start_worker():
     if not enabled(): return None

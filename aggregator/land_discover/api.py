@@ -8,7 +8,7 @@ from fastapi.responses import StreamingResponse, JSONResponse
 from .db import init_db, connect, ROOT, upsert, now
 from .normalize import parse_size
 from .sources import SOURCES
-from .eligibility import qualified_where
+from .eligibility import public_where
 
 @asynccontextmanager
 async def lifespan(app):
@@ -41,7 +41,7 @@ async def protect_hosted_backend(request, call_next):
 
 def filters(dataset:Literal['live','demo']='live',district:str='',area:str='',ward:str='',property_type:Literal['','land','house','apartment']='',transaction:Literal['','sale','rent','unknown']='',min_price:float|None=Query(None,ge=0),max_price:float|None=Query(None,ge=0),school_km:float|None=Query(None,ge=0,le=2),hospital_km:float|None=Query(None,ge=0,le=2),radius_m:int|None=Query(None,ge=250,le=2000)):
     if min_price is not None and max_price is not None and min_price>max_price: raise HTTPException(422,'Minimum price exceeds maximum price')
-    clauses=['is_demo=?',qualified_where()]; values=[int(dataset=='demo')]
+    clauses=['is_demo=?',public_where()]; values=[int(dataset=='demo')]
     for column,value in [('district',district),('area_name',area),('ward',ward),('property_type',property_type),('transaction_type',transaction)]:
         if value: clauses.append(column+'=?'); values.append(value)
     for column,op,value in [('total_price_npr','>=',min_price),('total_price_npr','<=',max_price),('school_distance_km','<=',school_km),('hospital_distance_km','<=',hospital_km),('enrichment_radius_m','=',radius_m)]:
@@ -50,7 +50,10 @@ def filters(dataset:Literal['live','demo']='live',district:str='',area:str='',wa
     return ' AND '.join(clauses),values
 
 def decode(row):
-    value=dict(row); value['quality_flags']=json.loads(value['quality_flags']); value['image_urls']=json.loads(value.get('image_urls') or '[]'); return value
+    value=dict(row)
+    for key in ('road_is_pitched', 'road_under_construction'):
+        if value.get(key) is not None: value[key] = bool(value[key])
+    value['quality_flags']=json.loads(value['quality_flags']); value['image_urls']=json.loads(value.get('image_urls') or '[]'); return value
 
 class ImportRequest(BaseModel):
     url: str = Field(min_length=10, max_length=2000)
@@ -140,20 +143,18 @@ def asking_range(body: AskingRangeRequest):
         rows = illustrative_listings(date.today())
     else:
         with connect() as con:
-            rows = [dict(row) for row in con.execute(f"SELECT * FROM properties WHERE is_demo=0 AND district='Kathmandu' AND property_type='land' AND transaction_type='sale' AND {qualified_where()}")]
+            rows = [dict(row) for row in con.execute(f"SELECT * FROM properties WHERE is_demo=0 AND district='Kathmandu' AND property_type='land' AND transaction_type='sale' AND {public_where()}")]
     return estimate(rows, body.model_dump())
 
 @app.get('/api/options')
 def options(dataset:Literal['live','demo']='live'):
     with connect() as con:
-        rows=con.execute('SELECT district,area_name,ward,enrichment_radius_m FROM properties WHERE is_demo=? AND '+qualified_where(),(int(dataset=='demo'),)).fetchall()
+        rows=con.execute('SELECT district,area_name,ward,enrichment_radius_m FROM properties WHERE is_demo=? AND '+public_where(),(int(dataset=='demo'),)).fetchall()
     return {'districts':sorted({r['district'] for r in rows}),'areas':sorted({r['area_name'] for r in rows}),'wards':sorted({r['ward'] for r in rows if r['ward']}),'radii':sorted({r['enrichment_radius_m'] for r in rows if r['enrichment_radius_m']})}
 
 @app.get('/api/properties')
 def properties(f=Depends(filters),page:int=Query(1,ge=1),page_size:int=Query(25,ge=1,le=100),sort:Literal['newest','price_asc','price_desc']='newest',q:str=Query('',max_length=200),saved_ids:list[int]|None=Query(None,max_length=500)):
     where,args=f
-    # Exact source-fact duplicates share a stable representative before filtering/paging.
-    where += " AND id IN (SELECT MIN(id) FROM properties GROUP BY is_demo,source,lower(trim(title)),lower(trim(address)),property_type,transaction_type,price_npr,price_basis,size,listing_date,lat,lng)"
     if q.strip():
         where += ' AND (instr(lower(title),lower(?))>0 OR instr(lower(address),lower(?))>0 OR instr(lower(area_name),lower(?))>0 OR instr(lower(district),lower(?))>0)'
         args += [q.strip()] * 4
@@ -170,24 +171,35 @@ def properties(f=Depends(filters),page:int=Query(1,ge=1),page_size:int=Query(25,
     return {'total':total,'items':[decode(r) for r in rows],'page':page,'page_size':page_size}
 
 @app.get('/api/properties/{property_id}')
-def detail(property_id:int):
-    return _property_detail(property_id, qualified_only=True)
+def detail(property_id:int, radius_m:int|None=Query(None,ge=1000,le=2000,multiple_of=1000)):
+    return _property_detail(property_id, qualified_only=True, radius_m=radius_m)
 
-def _property_detail(property_id:int, qualified_only:bool):
+def _property_detail(property_id:int, qualified_only:bool, radius_m:int|None=None):
     with connect() as con:
         query='SELECT * FROM properties WHERE id=?'
-        if qualified_only: query+=' AND '+qualified_where()
+        if qualified_only: query+=' AND '+public_where()
         row=con.execute(query,(property_id,)).fetchone()
+        if row is None and qualified_only:
+            original=con.execute('SELECT source,source_url,is_demo FROM properties WHERE id=?',(property_id,)).fetchone()
+            if original:
+                row=con.execute("SELECT * FROM properties WHERE source=? AND is_demo=? AND rtrim(source_url,'/')=rtrim(?, '/') AND "+public_where()+" ORDER BY id DESC LIMIT 1",(original['source'],original['is_demo'],original['source_url'])).fetchone()
+                if row: property_id=row['id']
         if row is None: raise HTTPException(404,'Property not found')
-        items=con.execute('SELECT * FROM amenities WHERE property_id=? ORDER BY distance_km',(property_id,)).fetchall()
-    return {**decode(row),'amenities':[dict(a) for a in items]}
+        requested_radius = radius_m or row['enrichment_radius_m'] or 1000
+        items=con.execute('SELECT * FROM amenities WHERE property_id=? AND distance_km<=? ORDER BY distance_km',(property_id,requested_radius/1000)).fetchall()
+        related=con.execute("SELECT * FROM properties WHERE is_demo=? AND district=? AND property_type=? AND transaction_type=? AND id!=? AND "+public_where()+" ORDER BY CASE WHEN lat BETWEEN 27.5 AND 27.9 AND lng BETWEEN 85.15 AND 85.6 THEN 0 ELSE 1 END,listing_date DESC,id DESC LIMIT 3",(row['is_demo'],row['district'],row['property_type'],row['transaction_type'],property_id)).fetchall()
+    return {**decode(row),'amenities':[dict(a) for a in items],
+            'facilities_radius_m':requested_radius,
+            'facilities_complete':row['enrichment_status']=='complete' and (row['enrichment_radius_m'] or 0)>=requested_radius,
+            'related_properties':[decode(item) for item in related]}
+
 
 @app.get('/api/sitemap')
 def sitemap_properties():
     """Bounded public URL inventory for the server-rendered website sitemap."""
     with connect() as con:
-        rows=con.execute('SELECT id,scraped_date FROM properties WHERE is_demo=0 AND '+qualified_where()+' ORDER BY id DESC LIMIT 50000').fetchall()
-    return {'items':[{'id':row['id'],'scraped_date':row['scraped_date']} for row in rows]}
+        rows=con.execute('SELECT id,content_updated_at,property_type,transaction_type,district FROM properties WHERE is_demo=0 AND '+public_where()+' ORDER BY id DESC LIMIT 50000').fetchall()
+    return {'items':[dict(row) for row in rows]}
 
 @app.get('/api/map')
 def map_data(f=Depends(filters)):
@@ -237,5 +249,5 @@ def sources(request: Request):
     with connect() as con:
         runs=con.execute('SELECT * FROM runs ORDER BY id DESC LIMIT 20').fetchall()
         collected={r['source']:r['count'] for r in con.execute('SELECT source,COUNT(*) count FROM properties WHERE is_demo=0 GROUP BY source')}
-        qualified={r['source']:r['count'] for r in con.execute('SELECT source,COUNT(*) count FROM properties WHERE is_demo=0 AND '+qualified_where()+' GROUP BY source')}
+        qualified={r['source']:r['count'] for r in con.execute('SELECT source,COUNT(*) count FROM properties WHERE is_demo=0 AND '+public_where()+' GROUP BY source')}
     return {'sources':[dict(v,id=k,listing_count=collected.get(k,0),collected_count=collected.get(k,0),qualified_count=qualified.get(k,0),auto_collect=source_enabled(k)) for k,v in SOURCES.items()],'runs':[dict(r,errors=json.loads(r['errors'])) for r in runs],'collection':collection_status()}

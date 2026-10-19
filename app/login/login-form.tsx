@@ -26,8 +26,9 @@ export default function LoginForm() {
         setLocalResetAvailable(Boolean(value?.local_password_reset_available))
       })
       .catch(() => { setResetAvailable(false); setLocalResetAvailable(false) })
-    if (!token) fetch('/api/auth/me').then(response => {
-      if (response.ok) {
+    if (!token) fetch('/api/auth/me', { cache: 'no-store', signal: AbortSignal.timeout(8000) }).then(async response => {
+      const value = response.ok ? await response.json() : null
+      if (value?.user) {
         const next = params.get('next')
         window.location.assign(next?.startsWith('/') && !next.startsWith('//') && !next.includes('\\') ? next : '/dashboard')
       }

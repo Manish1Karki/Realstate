@@ -9,6 +9,9 @@ backend remains a separate service; collection tools are not published to custom
 | `/properties` | Server-rendered, filterable property results |
 | `/properties/:id` | Server-rendered listing details and metadata |
 | `/login` | Registration, login, account sessions |
+| `/properties/:id` assistant | NVIDIA AI chat using the selected listing's saved facts |
+| `/api/property-chat/chat` | Server-only AI handler with same-origin checks |
+| `/visual-tour/` | Property map and visual tour assets |
 
 The build includes the property visual tour from VisualTour/. Public listings
 must be posted within six calendar months, contain property information, and have
@@ -106,12 +109,25 @@ Add these **server-side** Vercel environment variables:
 | `BACKEND_API_URL` | Your Render backend HTTPS origin, such as `https://YOUR-BACKEND.onrender.com` |
 | `BACKEND_PROXY_SECRET` | The exact value of Render's `LAND_PROXY_SECRET` |
 | `NEXT_PUBLIC_SITE_URL` | The canonical public HTTPS origin, such as `https://your-domain.example` |
+| `NVIDIA_API_KEY` | Existing NVIDIA API key, saved as an encrypted production secret |
+| `NVIDIA_MODEL` | Optional NVIDIA model name; defaults to the tested Nemotron model |
 
 Set the variables for Production and Preview as needed. `BACKEND_PROXY_SECRET`
 is server-only. Next.js uses the backend URL and secret for server-rendered public
 listing pages; browser account and form requests go through the same-origin
 `/api` proxy. Set `NEXT_PUBLIC_SITE_URL` to the final canonical domain before
 building so generated canonical and sitemap URLs match production.
+
+The production AI handler runs inside Next.js; it does not require a separate
+chat server or a localhost address. It reads the selected property through the
+authenticated backend connection. The NVIDIA key stays on the server. Only the
+question and a limited set of saved property facts are sent to NVIDIA; contact
+names/numbers, exact addresses, coordinates, descriptions, photos, and cookies
+are excluded from model context. Contact questions use listing data directly.
+
+The deployment upload excludes all `demos/` folders. The valuation demo and its
+illustrative `/api/asking-range` endpoint are unavailable through the public site.
+The research dashboard and collection controls remain operator-only.
 
 Deploy, then set Render's public URL/origin variables to the resulting Vercel
 origin. [Vercel rewrite documentation](https://vercel.com/docs/routing/rewrites)

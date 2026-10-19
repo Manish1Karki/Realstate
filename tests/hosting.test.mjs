@@ -67,7 +67,7 @@ test('upstream failure does not expose backend details or secrets', async () => 
 
 test('public proxy refuses collection endpoints without contacting the backend', async () => {
   const proxy = createProxy({ env, fetchImpl: () => { throw new Error('Must not be called'); } });
-  for (const path of ['sources', 'import', '%73ources', 'properties/../sources']) {
+  for (const path of ['sources', 'import', '%73ources', 'properties/../sources', 'asking-range', 'report/example', 'review/example']) {
     const res = response();
     await proxy(request({ query: { path }, url: `/api/${path}` }), res);
     assert.equal(res.statusCode, 404);
@@ -78,4 +78,13 @@ test('public hosting does not publish the research dashboard', () => {
   const config = JSON.parse(readFileSync(new URL('../vercel.json', import.meta.url), 'utf8'));
   assert.ok(!config.rewrites.some(route => route.source.startsWith('/aggregator')));
   assert.ok(!existsSync(new URL('../public/aggregator', import.meta.url)));
+});
+
+test('anonymous account status never contacts the backend', async () => {
+  const proxy = createProxy({ env, fetchImpl: () => { throw new Error('Backend must not be called'); } });
+  const res = response();
+  await proxy(request({ query: { path: 'auth/me' }, url: '/api/auth/me' }), res);
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(JSON.parse(res.text()), { user: null });
+  assert.equal(res.headers['cache-control'], 'no-store');
 });

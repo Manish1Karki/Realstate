@@ -37,6 +37,20 @@ def ld_items(value):
             if isinstance(value.get(key),(dict,list)): yield from ld_items(value[key])
 
 def parse_detail(html,url,source):
+    from .road import extract
+    from .media import collect_gallery
+    from .contacts import extract_contact
+    item = _parse_detail(html,url,source)
+    item = collect_gallery(item,html,url)
+    item = extract_contact(item,html)
+    soup = BeautifulSoup(html,'html.parser')
+    scope = soup.find('main') or soup
+    for node in scope.select('nav, footer, .related-properties, .related-listings'):
+        node.decompose()
+    return extract(item, fields(scope))
+
+
+def _parse_detail(html,url,source):
     if SOURCES.get(source, {}).get('adapter') == 'public_sources':
         from .public_sources import parse
         return parse(html, url, source)
@@ -244,11 +258,14 @@ def _scrape(source,max_pages,max_listings):
             report['location_geocoding']=geocode_pending(max_listings,property_ids=report['property_ids'])
         except Exception as exc:
             report['location_geocoding']={'errors':[{'message':str(exc)}]}
-    if report['property_ids'] and os.getenv('LAND_AUTO_ENRICH','false').lower()=='true':
+    if report['property_ids'] and os.getenv('LAND_AUTO_ENRICH','true').lower()=='true':
         try:
             from .geo import enrich
-            radius=int(os.getenv('LAND_AUTO_ENRICH_RADIUS','1500'))
+            radius=int(os.getenv('LAND_AUTO_ENRICH_RADIUS','2000'))
             report['location_enrichment']=enrich(max_listings,radius=radius,property_ids=report['property_ids'])
         except Exception as exc:
             report['location_enrichment']={'errors':[{'message':str(exc)}]}
+    if report['property_ids']:
+        from .archive import sync_if_enabled
+        report['property_archive'] = sync_if_enabled(report['property_ids'], download=True)
     return dict(run_id=run_id,status=status,**report)

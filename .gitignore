@@ -26,3 +26,6 @@ VisualTour/node_modules/
 VisualTour/dist/
 
 VisualTour/public/cesiumStatic/
+
+.next-seo-check/
+.next-seo-preview/

@@ -1311,3 +1311,6 @@ footer {
 .property-gallery img { width:min(85%,420px); height:260px; object-fit:cover; border-radius:12px; }
 .property-description { white-space:pre-line; }
 .property-card-visual .property-card-photo { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
+
+/* Maps live only beside the public property photos. */
+.explorer-grid{grid-template-columns:minmax(0,1fr)}

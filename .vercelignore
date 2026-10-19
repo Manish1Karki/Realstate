@@ -11,6 +11,9 @@ aggregator/data/
 .codex/
 .agents/
 .review/
+demos/
+output/
+tmp/
 .media-tools/
 .sites-runtime/
 *.log

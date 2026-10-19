@@ -67,7 +67,9 @@ def geocode(row, client, allow_area_fallback=True):
 
 def overpass_query(lat,lng,radius):
     return f'''[out:json][timeout:25];(
-      nwr(around:{radius},{lat},{lng})[amenity~"^(school|college|hospital|clinic|doctors|bank|marketplace|bus_station)$"];
+      nwr(around:{radius},{lat},{lng})[amenity~"^(school|college|kindergarten|university|hospital|clinic|doctors|pharmacy|bank|atm|marketplace|bus_station|police|fire_station)$"];
+      nwr(around:{radius},{lat},{lng})[shop~"^(supermarket|convenience|department_store)$"];
+      nwr(around:{radius},{lat},{lng})[leisure~"^(park|playground)$"];
       node(around:{radius},{lat},{lng})[highway=bus_stop];
       nwr(around:{radius},{lat},{lng})[public_transport=platform];
       way(around:{radius},{lat},{lng})[highway~"^(motorway|trunk|primary|secondary|tertiary)$"];
@@ -78,6 +80,11 @@ def parse_amenities(elements, lat, lng, radius):
     for obj in elements:
         tags=obj.get('tags',{}); amenity=tags.get('amenity',''); highway=tags.get('highway','')
         kind='school' if amenity in ('school','college') else 'hospital' if amenity in ('hospital','clinic','doctors') else 'transport' if amenity=='bus_station' or highway=='bus_stop' or tags.get('public_transport')=='platform' else 'bank' if amenity=='bank' else 'market' if amenity=='marketplace' else 'road' if highway in ('motorway','trunk','primary','secondary','tertiary') else None
+        if amenity in ('kindergarten','university'): kind='school'
+        elif amenity in ('pharmacy','atm','police','fire_station'): kind=amenity
+        elif tags.get('shop') == 'department_store': kind='department_store'
+        elif tags.get('shop') in ('supermarket','convenience'): kind='market'
+        elif tags.get('leisure') in ('park','playground'): kind=tags['leisure']
         if not kind: continue
         point=obj if 'lat' in obj else obj.get('center',{})
         if kind=='road' and obj.get('geometry'):
@@ -103,14 +110,17 @@ def amenities(lat,lng,radius,client):
         cache_set(key,payload)
     return parse_amenities(payload['elements'],lat,lng,radius)
 
-def enrich(limit=10,radius=1500,retry=False,property_ids=None):
+def enrich(limit=10,radius=1000,retry=False,property_ids=None):
     if not 250<=radius<=2000: raise ValueError('Radius must be between 250 and 2000 metres')
     ids=list(dict.fromkeys(int(value) for value in (property_ids or []) if int(value)>0))
     if property_ids is not None and not ids: return {'matched':0,'enriched':0,'errors':[]}
     # CLI only, one process at a time; lock held for the complete small batch.
     from .locking import single_job
     with single_job('enrichment'):
-        return _enrich(limit,radius,retry,ids if property_ids is not None else None)
+        result = _enrich(limit,radius,retry,ids if property_ids is not None else None)
+    from .archive import sync_if_enabled
+    result['property_archive'] = sync_if_enabled(ids if property_ids is not None else None)
+    return result
 
 def geocode_pending(limit=100,retry=False,property_ids=None):
     """Resolve listing addresses to approximate map points without amenity requests."""
@@ -119,7 +129,10 @@ def geocode_pending(limit=100,retry=False,property_ids=None):
     if property_ids is not None and not ids: return {'examined':0,'matched':0,'unresolved':0,'errors':[]}
     from .locking import single_job
     with single_job('enrichment'):
-        return _geocode_pending(limit,retry,ids if property_ids is not None else None)
+        result = _geocode_pending(limit,retry,ids if property_ids is not None else None)
+    from .archive import sync_if_enabled
+    result['property_archive'] = sync_if_enabled(ids if property_ids is not None else None)
+    return result
 
 def _geocode_pending(limit,retry,property_ids=None):
     condition="" if retry else " AND geocode_status='pending'"
@@ -137,6 +150,8 @@ def _geocode_pending(limit,retry,property_ids=None):
             row=dict(raw)
             try:
                 updates=geocode(row,client)
+                if any(key in updates and updates[key] != row.get(key) for key in ('lat','lng','geocode_precision')):
+                    updates['content_updated_at']=now()
                 with connect() as con:
                     con.execute('UPDATE properties SET '+','.join(k+'=?' for k in updates)+' WHERE id=?',
                                 [*updates.values(),row['id']])
@@ -175,6 +190,11 @@ def _enrich(limit,radius,retry,property_ids=None):
                     con.execute('DELETE FROM amenities WHERE property_id=?',(row['id'],))
                     con.executemany('INSERT INTO amenities(property_id,osm_id,name,kind,lat,lng,distance_km) VALUES (?,?,?,?,?,?,?)',[(row['id'],a['osm_id'],a['name'],a['kind'],a['lat'],a['lng'],a['distance_km']) for a in items])
                     school,hospital=nearest['school'],nearest['hospital']
+                    changes = {'nearest_school':school['name'] if school else None, 'school_distance_km':school['distance_km'] if school else None,
+                               'nearest_hospital':hospital['name'] if hospital else None, 'hospital_distance_km':hospital['distance_km'] if hospital else None,
+                               'nearest_road':road['name'] if road else None, 'road_distance_km':road['distance_km'] if road else None}
+                    if any(row.get(key) != value for key,value in changes.items()):
+                        con.execute('UPDATE properties SET content_updated_at=? WHERE id=?',(now(),row['id']))
                     con.execute("UPDATE properties SET nearest_school=?,school_distance_km=?,nearest_hospital=?,hospital_distance_km=?,nearest_road=?,road_distance_km=?,enrichment_status='complete',enrichment_radius_m=?,enriched_date=?,amenity_count=?,amenity_score=?,geo_error=NULL WHERE id=?",(school['name'] if school else None,school['distance_km'] if school else None,hospital['name'] if hospital else None,hospital['distance_km'] if hospital else None,road['name'] if road else None,road['distance_km'] if road else None,radius,now(),len([a for a in items if a['kind']!='road']),score,row['id']))
                 report['enriched']+=1
             except Exception as e:

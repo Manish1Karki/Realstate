@@ -1,22 +1,16 @@
 'use client'
 
-import { useEffect, useState, type FormEvent } from 'react'
+import { useState, type FormEvent, type ReactNode } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { readRememberedSearch } from '@/lib/property-search'
 
-type Props = { initialTransaction: string; initialType: string; initialDistrict?: string; initialQuery?: string; allowResume?: boolean }
-export default function BrowseOptions({ initialTransaction, initialType, initialDistrict = '', initialQuery = '', allowResume = true }: Props) {
+type Props = { initialTransaction: string; initialType: string; initialDistrict?: string; initialQuery?: string; children?: ReactNode }
+export default function BrowseOptions({ initialTransaction, initialType, initialDistrict = '', initialQuery = '', children }: Props) {
   const router = useRouter()
   const [transaction, setTransaction] = useState(initialTransaction === 'rent' ? 'rent' : 'sale')
   const [type, setType] = useState(initialType)
   const [district, setDistrict] = useState(initialDistrict)
   const [q, setQ] = useState(initialQuery)
-  const [checked,setChecked] = useState(!allowResume)
-  useEffect(() => {
-    if (allowResume) { const saved=readRememberedSearch(); if(saved) { router.replace(saved); return } }
-    setChecked(true)
-  },[allowResume,router])
   function search(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!type) return
@@ -25,7 +19,6 @@ export default function BrowseOptions({ initialTransaction, initialType, initial
     if (q.trim()) params.set('q', q.trim())
     router.push(`/properties?${params}`)
   }
-  if (!checked) return <main id="main" className="wrap browse-options-page"><p role="status">Returning to your properties...</p></main>
   return <main id="main" className="wrap browse-options-page">
     <nav className="breadcrumbs" aria-label="Breadcrumb"><Link href="/">Home</Link><span>/</span><span>Properties</span></nav>
     <header className="browse-filter-heading"><div><p className="eyebrow">EXPLORE KATHMANDU VALLEY</p><h1>Find a place that fits.</h1><p>Set your filters to explore homes and land for sale or rent.</p></div><Link className="button secondary" href="/properties/new">List a property</Link></header>
@@ -37,6 +30,7 @@ export default function BrowseOptions({ initialTransaction, initialType, initial
       </div>
       <div className="browse-filter-actions"><div><p>Searching for <strong>{type ? type.charAt(0).toUpperCase() + type.slice(1) : 'a property'}</strong> for <strong>{transaction === 'rent' ? 'rent' : 'sale'}</strong>{district ? ` in ${district}` : ' across Kathmandu Valley'}.</p><button type="button" className="text-button" onClick={() => { setTransaction('sale'); setType(''); setDistrict(''); setQ('') }}>Reset filters</button></div><button className="button primary" type="submit" disabled={!type}>Show properties <span aria-hidden="true">&rarr;</span></button></div>
     </form>
+    {children}
     <p className="browse-filter-note">Choose a property type to start. You can adjust your filters on the results page.</p>
   </main>
 }

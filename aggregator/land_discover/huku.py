@@ -56,7 +56,7 @@ def parse(html,url):
     elif not address:
         address,inferred=extract_address(title,'')
     offer=obj.get('offer') or obj.get('offers') or {}
-    if offer and offer.get('priceCurrency')!='NPR': raise ValueError('Unsupported HUKU currency')
+    if offer.get('price') not in (None, '') and offer.get('priceCurrency')!='NPR': raise ValueError('Unsupported HUKU currency')
     price_node=next((p for p in header.find_all('p') if re.match(r'\s*Rs\.',p.get_text())),None) if header else None
     price=clean(price_node.get_text(' ',strip=True)).replace('/-','') if price_node else str(offer.get('price',''))
     if transaction=='rent' and not re.search(r'per\s+month|/\s*month',price,re.I): price+=' per month'

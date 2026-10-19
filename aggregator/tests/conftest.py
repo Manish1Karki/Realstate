@@ -10,6 +10,8 @@ def isolated_db(tmp_path,monkeypatch,request):
     monkeypatch.setenv('LAND_DATABASE_DRIVER', request.param)
     monkeypatch.setenv('LAND_DB',str(tmp_path/'test.sqlite3'))
     monkeypatch.setenv('LAND_AUTO_SCRAPE','false')
+    monkeypatch.setenv('LAND_ARCHIVE_ENABLED','false')
+    monkeypatch.delenv('LAND_ARCHIVE_DIR', raising=False)
     init_db()
 
 @pytest.fixture

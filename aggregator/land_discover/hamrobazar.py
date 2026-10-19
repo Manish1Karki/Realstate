@@ -1,7 +1,7 @@
 """Public HTML adapter verified against Hamrobazar's September 2026 pages.
 
 Reads visible listing content and its public Product JSON-LD only. Does not use
-hydration internals, private APIs, masked location fields, or seller contacts.
+hydration internals, private APIs, or masked location/contact fields.
 """
 import json
 import re
@@ -94,7 +94,7 @@ def parse(html,url,scraped_at=None):
         # "Aana/Dhur" does not establish a unit. Retain it without conversion.
         size=raw_size if parse_size(raw_size) else raw_size+' (Aana/Dhur unspecified)'
     offers=obj.get('offers',{})
-    if offers.get('priceCurrency')!='NPR': raise ValueError('Unsupported listing currency')
+    if offers.get('price') not in (None, '') and offers.get('priceCurrency')!='NPR': raise ValueError('Unsupported listing currency')
     raw_price=str(offers.get('price',''))
     unit=re.search(r'(?:per|/)\s*(aana|anna|ana|ropani|sq\.?\s*ft|sqft)\b',description,re.I)
     if unit:raw_price+=' per '+unit[1]
@@ -116,5 +116,5 @@ def parse(html,url,scraped_at=None):
         flags.append('Land price basis unspecified; raw asking amount retained')
     if transaction=='rent' and item['price_basis']=='total':
         item['price_basis']='unknown';item['total_price_npr']=None;flags.append('Rental period unspecified')
-    # Do not retain full descriptions or seller identities/contact details.
+    # Public listing contacts are extracted separately; masked numbers are not recovered.
     return item

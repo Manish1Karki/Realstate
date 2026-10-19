@@ -21,7 +21,7 @@ export function createProxy({ fetchImpl = fetch, env = process.env } = {}) {
     } catch { error(400, 'Invalid service request.'); return; }
 
     // Collection controls and operational status are backend-only.
-    if (/^\/api\/(?:sources|import)(?:\/|$)/.test(decodeURIComponent(upstream.pathname))) { error(404, 'Not found.'); return; }
+    if (/^\/api\/(?:sources|import|asking-range|report|review)(?:\/|$)/.test(decodeURIComponent(upstream.pathname))) { error(404, 'Not found.'); return; }
 
     const host = req.headers.host;
     if (!host || !/^[a-zA-Z0-9.:-]+$/.test(host)) { error(400, 'Invalid website host.'); return; }
@@ -30,6 +30,9 @@ export function createProxy({ fetchImpl = fetch, env = process.env } = {}) {
     if (!['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'].includes(method)) { error(405, 'Method not allowed.'); return; }
     if (!['GET', 'HEAD', 'OPTIONS'].includes(method) && req.headers.origin && req.headers.origin !== origin) {
       error(403, 'This request came from an untrusted website.'); return;
+    }
+    if (method === 'GET' && upstream.pathname === '/api/auth/me' && !/(?:^|;\s*)land_discover_session=[^;]+/.test(req.headers.cookie || '')) {
+      res.statusCode = 200; res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify({ user: null })); return;
     }
     const headers = { 'X-Land-Proxy-Token': env.BACKEND_PROXY_SECRET, 'X-Land-Frontend-Origin': origin };
     for (const name of ['accept', 'content-type', 'cookie', 'origin', 'sec-fetch-site', 'x-land-import-token']) {

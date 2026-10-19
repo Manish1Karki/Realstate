@@ -1,16 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { createRoot } from "react-dom/client";
 import {
-  MapContainer,
-  TileLayer,
-  CircleMarker,
-  Popup,
-  useMap,
-} from "react-leaflet";
-import L from "leaflet";
-import "leaflet.heat";
-import "leaflet/dist/leaflet.css";
-import {
   Map,
   Layers3,
   Database,
@@ -60,121 +50,6 @@ const initial = {
   hospital_km: "",
   radius_m: "",
 };
-function Heat({ points, enabled }) {
-  const map = useMap();
-  useEffect(() => {
-    if (!enabled) return;
-    const layer = L.heatLayer(
-      points.map((p) => [p.lat, p.lng, 0.5]),
-      {
-        radius: 28,
-        blur: 23,
-        maxZoom: 15,
-        gradient: {
-          0.2: "#bbdfb4",
-          0.5: "#f5c86c",
-          0.8: "#e88c55",
-          1: "#ba4b4b",
-        },
-      },
-    ).addTo(map);
-    return () => map.removeLayer(layer);
-  }, [map, points, enabled]);
-  return null;
-}
-function Fit({ points }) {
-  const map = useMap();
-  useEffect(() => {
-    if (points.length)
-      map.fitBounds(
-        points.map((p) => [p.lat, p.lng]),
-        { padding: [35, 35], maxZoom: 14 },
-      );
-  }, [map, points]);
-  return null;
-}
-function PropertyMap({ data, onSelect, mode = "price", mini = false }) {
-  const points = data.items.filter((p) => p.lat != null && p.lng != null);
-  const [tileError, setTileError] = useState(false);
-  return (
-    <div className={`map-shell ${mini ? "mini" : ""}`}>
-      <MapContainer
-        center={[27.705, 85.345]}
-        zoom={12}
-        scrollWheelZoom={false}
-        style={{ height: "100%", width: "100%" }}
-      >
-        <TileLayer
-          url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-          eventHandlers={{ tileerror: () => setTileError(true) }}
-        />
-        <Fit points={points} />
-        <Heat points={data.amenities || []} enabled={mode === "heat"} />
-        {points.map((p) => (
-          <CircleMarker
-            key={p.id}
-            center={[p.lat, p.lng]}
-            radius={mini ? 9 : 8}
-            pathOptions={{
-              color: "#fff",
-              weight: 2,
-              fillOpacity: 0.95,
-              fillColor:
-                mode === "score"
-                  ? p.amenity_score == null
-                    ? "#87938e"
-                    : p.amenity_score >= 60
-                      ? "#0c806a"
-                      : p.amenity_score >= 30
-                        ? "#dba949"
-                        : "#b46c57"
-                  : p.total_price_npr == null
-                    ? "#87938e"
-                    : p.total_price_npr < 15000000
-                      ? "#0c806a"
-                      : p.total_price_npr < 30000000
-                        ? "#dba949"
-                        : "#b46c57",
-            }}
-          >
-            <Popup>
-              <b>{p.title}</b>
-              <p>{money(p.total_price_npr ?? p.price_npr)}</p>
-              <small>{p.geocode_precision || "Approximate location"}</small>
-              {onSelect && (
-                <button className="popup-button" onClick={() => onSelect(p.id)}>
-                  View property details
-                </button>
-              )}
-            </Popup>
-          </CircleMarker>
-        ))}
-        {mini &&
-          (data.amenities || []).map((a) => (
-            <CircleMarker
-              key={a.id}
-              center={[a.lat, a.lng]}
-              radius={4}
-              pathOptions={{ color: "#567aa1" }}
-            >
-              <Popup>
-                {a.name}
-                <br />
-                {a.kind} · {km(a.distance_km)}
-              </Popup>
-            </CircleMarker>
-          ))}
-      </MapContainer>
-      {tileError && (
-        <div className="tile-warning">
-          Map tiles unavailable. Listing data remains available below.
-        </div>
-      )}
-    </div>
-  );
-}
-
 function Detail({ id, onClose }) {
   const [record, setRecord] = useState(null),
     [error, setError] = useState("");
@@ -271,17 +146,6 @@ function Detail({ id, onClose }) {
               </dd>
             </div>
           </dl>
-          {record.lat != null ? (
-            <PropertyMap
-              mini
-              data={{ items: [record], amenities: record.amenities }}
-            />
-          ) : (
-            <div className="empty small-empty">
-              Location has not been resolved. This property is excluded from the
-              map.
-            </div>
-          )}
           <h3>Nearby facilities</h3>
           <p className="caption">
             Straight-line distances from the geocoded point, not walking
@@ -325,16 +189,6 @@ function Detail({ id, onClose }) {
               <li key={i}>{flag}</li>
             ))}
           </ul>
-          {/^https:\/\//.test(record.source_url) && (
-            <a
-              className="button"
-              href={record.source_url}
-              target="_blank"
-              rel="noreferrer"
-            >
-              Original listing <ArrowUpRight size={16} />
-            </a>
-          )}
           <p className="caption">
             Source: {record.source}. Water supply reliability has not been
             verified.
@@ -586,7 +440,7 @@ function App() {
             <br />
             Bhaktapur
           </p>
-          <span>OpenStreetMap powered</span>
+
         </div>
       </aside>
       <div className="main">
@@ -879,74 +733,7 @@ function App() {
                 </p>
               </form>
               <div className="explorer-grid">
-                <section className="panel map-panel">
-                  <div className="panel-header">
-                    <div>
-                      <h2>The valley, at a glance</h2>
-                      <p>
-                        {data?.map.mapped_total || 0} mapped properties{" "}
-                        {data?.map.truncated ? "· showing first 3,000" : ""}
-                      </p>
-                    </div>
-                    <label className="map-mode">
-                      <Layers3 size={15} />
-                      <select
-                        aria-label="Map layer"
-                        value={mode}
-                        onChange={(e) => setMode(e.target.value)}
-                      >
-                        <option value="price">Asking price</option>
-                        <option value="score">Amenity proximity</option>
-                        <option value="heat">Amenity heatmap</option>
-                      </select>
-                    </label>
-                  </div>
-                  {data && (
-                    <PropertyMap
-                      data={data.map}
-                      onSelect={setSelected}
-                      mode={mode}
-                    />
-                  )}
-                  <div className="legend">
-                    {mode === "price" ? (
-                      <>
-                        <span>
-                          <i className="green" /> Below NPR 1.5 cr
-                        </span>
-                        <span>
-                          <i className="gold" /> 1.5–3 cr
-                        </span>
-                        <span>
-                          <i className="rust" /> 3 cr+
-                        </span>
-                        <span>
-                          <i className="grey" /> Unknown
-                        </span>
-                      </>
-                    ) : mode === "score" ? (
-                      <>
-                        <span>
-                          <i className="green" /> 60–100
-                        </span>
-                        <span>
-                          <i className="gold" /> 30–59
-                        </span>
-                        <span>
-                          <i className="rust" /> Below 30
-                        </span>
-                        <span>
-                          <i className="grey" /> Not enriched
-                        </span>
-                      </>
-                    ) : (
-                      <span>
-                        Density of unique recorded facility points · up to
-                        10,000 points
-                      </span>
-                    )}
-                  </div>
-                </section>
+
                 <section className="panel chart-panel">
                   <div className="panel-header">
                     <div>

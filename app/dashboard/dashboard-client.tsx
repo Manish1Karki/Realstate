@@ -54,13 +54,14 @@ export default function DashboardClient() {
         window.history.replaceState(null, '', '/dashboard')
       }
       try {
-        const response = await fetch('/api/auth/me', { credentials: 'include', cache: 'no-store' })
+        const response = await fetch('/api/auth/me', { credentials: 'include', cache: 'no-store', signal: AbortSignal.timeout(8000) })
         if (response.status === 401 && !verificationToken) {
           window.location.assign('/login?next=%2Fdashboard')
           return
         }
         if (response.ok) {
           const value = await response.json()
+          if (!value.user && !verificationToken) { window.location.assign('/login?next=%2Fdashboard'); return }
           if (active) setUser(value.user)
         } else if (response.status !== 401 && active) {
           setProfileMessage('The account service is unavailable. Please try again.')

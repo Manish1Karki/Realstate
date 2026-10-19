@@ -2,16 +2,20 @@
   "name": "land-discover-prototype",
   "private": true,
   "type": "module",
-  "engines": { "node": "24.x" },
+  "engines": {
+    "node": "24.x"
+  },
   "scripts": {
     "install:apps": "npm ci && npm --prefix VisualTour ci",
     "build": "node scripts/build-prototype.mjs",
     "build:next": "next build",
     "test:hosting": "node --test tests/hosting.test.mjs",
+    "test:chat": "node --test tests/property-chat.test.mjs",
     "deploy:prototype": "node scripts/deploy-prototype.mjs",
     "dev:web": "next dev",
     "dev:landing": "npm --prefix LandingPage run dev -- --host 127.0.0.1",
-    "dev:aggregator": "npm --prefix aggregator/frontend run dev -- --base /aggregator/ --port 5174 --strictPort"
+    "dev:aggregator": "npm --prefix aggregator/frontend run dev -- --base /aggregator/ --port 5174 --strictPort",
+    "test:seo": "node --test tests/seo.test.mjs"
   },
   "dependencies": {
     "next": "^16.0.0",

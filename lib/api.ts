@@ -1,7 +1,10 @@
+import { cache } from 'react'
+
 export type Property = {
   id: number
   contact_name?: string | null
   contact_phone?: string | null
+  contact_role?: string | null
   source: string
   source_url: string
   title: string
@@ -19,6 +22,12 @@ export type Property = {
   nearest_road?: string | null
   road_distance_km?: number | null
   road_access_note?: string | null
+  road_type?: string | null
+  road_width_ft?: number | null
+  road_is_pitched?: boolean | null
+  road_under_construction?: boolean | null
+  enrichment_radius_m?: number | null
+  enrichment_status?: string | null
   geocode_status?: string | null
   geocode_precision?: string | null
   geocode_label?: string | null
@@ -36,9 +45,13 @@ export type Property = {
   image_urls?: string[]
   listing_date?: string | null
   scraped_date?: string | null
+  content_updated_at?: string | null
   quality_flags?: string[]
+  related_properties?: Property[]
   amenities?: { id: number; name: string; kind: string; distance_km: number }[]
 }
+
+export type SitemapProperty = { id: number; content_updated_at: string | null; property_type: string; transaction_type: string; district: string }
 
 export type PropertyPage = { total: number; items: Property[]; page: number; page_size: number }
 
@@ -57,27 +70,30 @@ export async function getProperties(params: URLSearchParams): Promise<PropertyPa
   const query = new URLSearchParams(params)
   query.set('page_size', query.get('page_size') || '12')
   const response = await fetch(`${apiOrigin()}/api/properties?${query}`, {
-    cache: 'no-store',
+    ...(query.get('q') || query.has('saved_ids') ? { cache: 'no-store' as const } : { next: { revalidate: 60, tags: ['properties'] } }),
     headers: serverHeaders(),
+    signal: AbortSignal.timeout(20000),
   })
   if (!response.ok) throw new Error(`Property API returned ${response.status}`)
   return response.json()
 }
 
-export async function getProperty(id: string | number): Promise<Property | null> {
+export const getProperty = cache(async (id: string | number): Promise<Property | null> => {
   if (!/^\d+$/.test(String(id))) return null
   const response = await fetch(`${apiOrigin()}/api/properties/${id}`, {
-    cache: 'no-store',
+    next: { revalidate: 60, tags: ['properties'] },
     headers: serverHeaders(),
+    signal: AbortSignal.timeout(20000),
   })
   if (response.status === 404) return null
   if (!response.ok) throw new Error(`Property API returned ${response.status}`)
   return response.json()
-}
+})
 
-export async function getSitemapProperties(): Promise<{ id: number; scraped_date: string | null }[]> {
+export async function getSitemapProperties(): Promise<SitemapProperty[]> {
   const response = await fetch(`${apiOrigin()}/api/sitemap`, {
-    next: { revalidate: 1800, tags: ['properties'] },
+    next: { revalidate: 300, tags: ['properties'] },
+    signal: AbortSignal.timeout(20000),
     headers: serverHeaders(),
   })
   if (!response.ok) throw new Error(`Property API returned ${response.status}`)
@@ -88,9 +104,10 @@ export async function getSitemapProperties(): Promise<{ id: number; scraped_date
 export function formatPrice(property: Property) {
   const amount = property.total_price_npr ?? property.price_npr
   if (amount == null) return property.price_raw || 'Price on request'
-  if (amount >= 10_000_000) return `NPR ${(amount / 10_000_000).toLocaleString('en', { maximumFractionDigits: 2 })} crore`
-  if (amount >= 100_000) return `NPR ${(amount / 100_000).toLocaleString('en', { maximumFractionDigits: 2 })} lakh`
-  return `NPR ${amount.toLocaleString('en')}`
+  const value = amount >= 10_000_000 ? 'NPR ' + (amount / 10_000_000).toLocaleString('en', { maximumFractionDigits: 2 }) + ' crore'
+    : amount >= 100_000 ? 'NPR ' + (amount / 100_000).toLocaleString('en', { maximumFractionDigits: 2 }) + ' lakh' : 'NPR ' + amount.toLocaleString('en')
+  const basis = !property.total_price_npr ? property.price_basis : ''
+  return value + (basis === 'monthly' ? ' / month' : basis?.startsWith('per_') ? ' ' + basis.replaceAll('_', ' ') : '')
 }
 
 export function canonicalSiteUrl(path = '/') {

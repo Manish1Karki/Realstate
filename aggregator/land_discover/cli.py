@@ -6,15 +6,20 @@ from .normalize import normalize
 def main():
     p=argparse.ArgumentParser(description='Land Discover data pipeline')
     sub=p.add_subparsers(dest='command',required=True)
+    archive=sub.add_parser('archive'); archive.add_argument('--photos',action='store_true'); archive.add_argument('--max-downloads',type=int,default=40)
     sub.add_parser('init'); sub.add_parser('demo'); sub.add_parser('sources')
     scrape=sub.add_parser('scrape'); scrape.add_argument('source'); scrape.add_argument('--pages',type=int,default=2); scrape.add_argument('--limit',type=int,default=20); scrape.add_argument('--csv',default='data/listings.csv')
     export=sub.add_parser('export');export.add_argument('path');export.add_argument('--source')
-    geo=sub.add_parser('enrich'); geo.add_argument('--limit',type=int,default=10); geo.add_argument('--radius',type=int,default=1500); geo.add_argument('--retry',action='store_true')
+    geo=sub.add_parser('enrich'); geo.add_argument('--limit',type=int,default=10); geo.add_argument('--radius',type=int,default=1000); geo.add_argument('--retry',action='store_true')
     locate=sub.add_parser('geocode'); locate.add_argument('--limit',type=int,default=100); locate.add_argument('--retry',action='store_true')
     imp=sub.add_parser('import-csv'); imp.add_argument('path'); imp.add_argument('--source',required=True)
     parse=sub.add_parser('parse-html'); parse.add_argument('path'); parse.add_argument('--source',required=True); parse.add_argument('--url',required=True)
     args=p.parse_args(); init_db()
     if args.command=='init': result={'status':'initialized'}
+    elif args.command=='archive':
+        from .archive import sync_properties
+        if not 0<=args.max_downloads<=200: p.error('Use 0-200 photo downloads per archive batch')
+        result=sync_properties(download=args.photos,max_downloads=args.max_downloads)
     elif args.command=='demo':
         from .demo import seed
         result={'demo_records':seed()}

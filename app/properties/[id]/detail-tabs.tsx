@@ -13,7 +13,7 @@ export default function DetailTabs({ overview, location }: { overview: ReactNode
   }
   return <div className="property-tabs">
     <div className="property-tab-list" role="tablist" aria-label="Property information">
-      {['overview', 'location'].map(tab => <button key={tab} type="button" role="tab" id={'detail-tab-' + tab} aria-controls={'detail-panel-' + tab} aria-selected={active === tab} tabIndex={active === tab ? 0 : -1} onClick={() => setActive(tab)} onKeyDown={navigate}>{tab === 'overview' ? 'Overview' : 'Location'}</button>)}
+      {['overview', 'location'].map(tab => <button key={tab} type="button" role="tab" id={'detail-tab-' + tab} aria-controls={'detail-panel-' + tab} aria-selected={active === tab} tabIndex={active === tab ? 0 : -1} onClick={() => setActive(tab)} onKeyDown={navigate}>{tab === 'overview' ? 'Information' : 'Location'}</button>)}
     </div>
     <section id="detail-panel-overview" role="tabpanel" aria-labelledby="detail-tab-overview" hidden={active !== 'overview'}>{overview}</section>
     <section id="detail-panel-location" role="tabpanel" aria-labelledby="detail-tab-location" hidden={active !== 'location'}>{location}</section>

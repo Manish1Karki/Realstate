@@ -47,4 +47,11 @@ def qualified_where():
             "AND length(trim(COALESCE(title,'')))>0 AND length(trim(COALESCE(address,'')))>0 "
             "AND property_type IN ('house','land','apartment') AND transaction_type IN ('sale','rent') "
             f"AND {photo} "
+            "AND COALESCE(photo_status,'unknown') NOT IN ('invalid','missing') "
             "AND (price_npr>0 OR length(trim(COALESCE(size,'')))>0 OR length(trim(COALESCE(description,'')))>=30)")
+
+def public_where():
+    eligible = qualified_where()
+    aliases = "id IN (SELECT MAX(id) FROM properties WHERE " + eligible + " GROUP BY is_demo,source,rtrim(source_url,'/'))"
+    facts = "is_demo,source,lower(trim(title)),lower(trim(address)),property_type,transaction_type,price_npr,price_basis,size,listing_date,lat,lng,total_price_npr,bedrooms,bathrooms,description,image_urls,contact_phone"
+    return eligible + " AND id IN (SELECT MIN(id) FROM properties WHERE " + eligible + " AND " + aliases + " GROUP BY " + facts + ")"

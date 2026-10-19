@@ -2,7 +2,7 @@
 
 Land Discover is moving to a production-oriented stack for its public real estate marketplace. The public site is now a Next.js App Router application with TypeScript. Property search and detail pages render listing content on the server and generate page metadata, canonical URLs, robots rules, and a listing sitemap. The existing FastAPI collection and account API remains the source of listing data. Collection runs only in the backend; the research dashboard is not served by the public site.
 
-Current storage is still SQLite locally and Turso libSQL on the hosted prototype. PostgreSQL/PostGIS and a dedicated queue/worker are a later backend migration; they have not been switched on by this front-end SEO migration. Collection remains source-specific and permission-aware. VisualTour is not part of the public deployment.
+Current storage is still SQLite locally and Turso libSQL on the hosted prototype. PostgreSQL/PostGIS and a dedicated queue/worker are a later backend migration. Collection remains source-specific and permission-aware. The public deployment includes the property visual tour and the AI assistant beneath each property's photos and map. Property valuation remains a separate local demo and is not published.
 
 For local development, run the FastAPI service and Next.js in separate terminals:
 
@@ -71,4 +71,44 @@ in hosted environments; use the verified email reset flow there.
 
 Property submission requires a valid signed-in session. Guests visiting `/properties/new` are redirected to login and returned to the form after sign-in or registration. The backend rejects unauthenticated, expired, or revoked sessions on `POST /api/properties`; browsing listings remains public.
 
-Collection defaults to six index pages and up to 80 inspected detail URLs per source per cycle (maximum configurable limits: 30 pages/300 URLs). Reports distinguish inspected, imported/updated, rejected and date/information skips. External listings are stored as an information cache with source URLs and original listing dates. Optional external geocoding/enrichment is disabled locally so it does not delay collection; source-published map pins are retained.
+Collection defaults to six index pages and up to 80 inspected detail URLs per source per cycle (maximum configurable limits: 30 pages/300 URLs). Reports distinguish inspected, imported/updated, rejected and date/information skips. External listings are stored as an information cache with source URLs and original listing dates. Approximate address geocoding remains optional. Automatic nearby-facility enrichment is enabled for source-published map pins within a 2,000 metre radius (straight-line distance), using cached OpenStreetMap data. Listings without a source pin retain their address but cannot provide reliable property-centred facility distances.
+
+## Scraped location, road access, and nearby facilities
+
+Property photo collection merges source-specific photos, listing schema image arrays, and public gallery/carousel images, including lazy-loaded images and full-size lightbox links. Up to 30 distinct photo URLs are stored in `image_urls`; `image_url` is the cover photo. Related listings, logos, and placeholders are excluded. A source with only one published photo retains one photo; additional perspectives are never fabricated. Existing listings receive expanded galleries on re-collection.
+
+Each source detail adapter captures the published address and map coordinates when available. Road evidence is retained in `road_access_note`, with structured `road_type` (asphalt, concrete, gravel, earth, or pavers), `road_width_ft`, `road_is_pitched`, and `road_under_construction`. The last field describes the access road, not the building. Boolean fields are `true`, `false`, or `null` in the API; missing or conflicting evidence remains unknown. Pitched means paved: asphalt, concrete, or pavers. Future paving promises do not establish the present surface. These are source-reported claims, not an independent inspection.
+
+Automatic enrichment defaults to `LAND_AUTO_ENRICH=true` and `LAND_AUTO_ENRICH_RADIUS=2000`. The detail API returns mapped schools/colleges/universities, healthcare facilities, pharmacies, banks/ATMs, markets/shops/department stores, transport stops, parks/playgrounds, police and fire stations within 2 km of the source pin, with names and straight-line distances. OpenStreetMap coverage may be incomplete. A nearby mapped road does not establish legal or physical access, pavement, or current construction status. Failed facility lookups remain marked as errors; an empty successful result means no matching mapped facilities were returned.
+
+Existing listings gain road fields on re-collection. To refresh nearby facilities for existing source pins, run `.venv/Scripts/python.exe -m land_discover.cli enrich --radius 1000 --limit 100 --retry` from the `aggregator` directory.
+
+The property detail API accepts `?radius_m=1000` or `?radius_m=2000` to view nearby facilities at either radius. `facilities_radius_m` identifies the requested radius; `facilities_complete` is false when enrichment failed, is pending, or covers a smaller radius. Mapped residential buildings are not included as facilities.
+
+Public listing phone numbers are stored in `contact_phone`, with `contact_role` set to owner, agent, seller, or unknown only according to the page label. Masked numbers, reveal controls, hidden data, related listings and site-wide office contacts are excluded. Missing numbers remain null and contacts are refreshed on re-collection. Published contact claims do not verify ownership. Source-advertised prices remain in `price_raw`; normalized prices and totals derived from explicit unit prices remain labelled. No price is generated when a source omits it; synthetic demo records are separate from the public dataset.
+
+## Property folders and primary IDs
+
+The database `properties.id` is the primary key for each property. Re-scraping the same source listing updates that ID. The local archive mirrors non-demo records under `aggregator/data/property-archive/`, organized by district, locality, and `property-000084` (example ID). Folder names include a short hash to avoid collisions between sanitized location names.
+
+Each property folder contains:
+
+- `property.json`: the complete property record, database ID, source URL, road details and photo URLs.
+- `location.json`: address, district, locality, ward, coordinates and precision.
+- `contact.json`: publicly published number, contact role, and an explicit unverified-ownership flag.
+- `facilities.json`: facilities, distances, enrichment radius and status.
+- `photos/manifest.json`: source URLs, downloaded file names, pending/error status and timestamps.
+- `photos/photo-<hash>.jpg` (or other supported raster extension): downloaded originals, up to 30 photos per property, with a 10 MiB limit per file.
+
+Every companion JSON file references the same `property_id`; `by-id/property-000084.json` points to its location folder. If a property's location changes, its folder and existing photos move while the primary ID stays the same. Downloads reuse existing files and report failures without discarding property metadata. Failed URLs are retried after six hours, while other pending photos can proceed in subsequent batches. This archive is local, excluded from Git, and outside the public web assets.
+
+Metadata is refreshed after property upserts, geocoding, and facility enrichment. Scraping/import and automatic collection also download photos in bounded batches. Settings: `LAND_ARCHIVE_ENABLED=true`, optional `LAND_ARCHIVE_DIR`, and `LAND_ARCHIVE_PHOTO_BATCH=40`. Hosted deployments need a persistent disk or an external archive location for durable files; the Turso database remains the source of truth.
+
+To backfill or refresh the archive from the `aggregator` directory:
+
+```powershell
+.\.venv\Scripts\python.exe -m land_discover.cli archive
+.\.venv\Scripts\python.exe -m land_discover.cli archive --photos --max-downloads 40
+```
+
+Repeat photo batches to download remaining photos. A pending or error photo entry is a source reference, not a claim that the file was downloaded. Cross-source advertisements retain separate IDs because matching them to the same physical property requires verification.

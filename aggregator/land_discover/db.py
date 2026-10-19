@@ -122,7 +122,7 @@ def init_db():
             if column not in user_columns:
                 con.execute(f"ALTER TABLE users ADD COLUMN {column} TEXT NOT NULL DEFAULT ''")
         existing = {row['name'] for row in con.execute('PRAGMA table_info(properties)')}
-        for column, kind in [('description', 'TEXT'), ('bedrooms', 'INTEGER'), ('bathrooms', 'INTEGER'), ('contact_name', 'TEXT'), ('contact_phone', 'TEXT'), ('image_url', 'TEXT'), ('image_urls', "TEXT DEFAULT '[]'"), ('nearest_road', 'TEXT'), ('road_distance_km', 'REAL')]:
+        for column, kind in [('photo_status', "TEXT DEFAULT 'unknown'"), ('photo_checked_at', 'TEXT'), ('photo_failures', 'INTEGER DEFAULT 0'), ('content_updated_at', 'TEXT'), ('description', 'TEXT'), ('bedrooms', 'INTEGER'), ('bathrooms', 'INTEGER'), ('contact_name', 'TEXT'), ('contact_phone', 'TEXT'), ('contact_role', 'TEXT'), ('image_url', 'TEXT'), ('image_urls', "TEXT DEFAULT '[]'"), ('nearest_road', 'TEXT'), ('road_distance_km', 'REAL'), ('road_type', 'TEXT'), ('road_width_ft', 'REAL'), ('road_is_pitched', 'INTEGER'), ('road_under_construction', 'INTEGER')]:
             if column not in existing:
                 con.execute(f'ALTER TABLE properties ADD COLUMN {column} {kind}')
 
@@ -131,8 +131,28 @@ def upsert(item):
     item.setdefault('scraped_date', now()); item.setdefault('first_seen', now())
     if isinstance(item.get('quality_flags'), list): item['quality_flags'] = json.dumps(item['quality_flags'])
     if isinstance(item.get('image_urls'), list): item['image_urls'] = json.dumps(item['image_urls'])
+    if isinstance(item.get('description'), str):
+        import re
+        from bs4 import BeautifulSoup
+        description = BeautifulSoup(item['description'], 'html.parser').get_text(' ', strip=True)
+        description = re.sub(r'^Views:.*?Table of Contents Toggle\s*', '', description, flags=re.I)
+        item['description'] = re.sub(r'\s+', ' ', description).strip()
     with connect() as con:
-        old = con.execute('SELECT * FROM properties WHERE source_url=?', (item['source_url'],)).fetchone()
+        old = con.execute("SELECT * FROM properties WHERE source=? AND rtrim(source_url,'/')=rtrim(?, '/') ORDER BY id DESC LIMIT 1", (item['source'],item['source_url'])).fetchone()
+        if old: item['source_url'] = old['source_url']
+        if old and old['photo_status'] == 'available' and old['image_url']:
+            try: gallery = json.loads(item.get('image_urls') or '[]')
+            except (ValueError,TypeError): gallery = []
+            if old['image_url'] in gallery: item['image_url'] = old['image_url']
+        meaningful = ('title','description','address','area_name','district','ward','lat','lng','geocode_precision',
+                      'price_npr','price_basis','price_raw','total_price_npr','property_type','transaction_type',
+                      'size','size_sqft','listing_date','road_access_note','road_type','road_width_ft','road_is_pitched','road_under_construction','bedrooms','bathrooms','image_url','image_urls',
+                      'contact_name','contact_phone','contact_role','nearest_school','school_distance_km','nearest_hospital',
+                      'hospital_distance_km','nearest_road','road_distance_km')
+        if old and any(key in item and old[key] != item[key] for key in ('image_url','image_urls')):
+            item.update(photo_status='unknown', photo_checked_at=None, photo_failures=0)
+        changed = old is None or any(key in item and old[key] != item[key] for key in meaningful)
+        item['content_updated_at'] = now() if changed else old['content_updated_at']
         if old and (old['address'] != item['address']
                     or ('geocode_precision' in item and old['geocode_precision'] != item['geocode_precision'])
                     or ('lat' in item and old['lat'] != item['lat'])
@@ -142,7 +162,13 @@ def upsert(item):
         columns = list(item)
         updates = ','.join(f'{c}=excluded.{c}' for c in columns if c not in ('source_url','first_seen'))
         con.execute(f"INSERT INTO properties ({','.join(columns)}) VALUES ({','.join('?' for _ in columns)}) ON CONFLICT(source_url) DO UPDATE SET {updates}", list(item.values()))
-        return con.execute('SELECT id FROM properties WHERE source_url=?', (item['source_url'],)).fetchone()[0]
+        property_id = con.execute('SELECT id FROM properties WHERE source_url=?', (item['source_url'],)).fetchone()[0]
+    from .archive import sync_if_enabled
+    archive_result = sync_if_enabled([property_id])
+    if archive_result.get('errors'):
+        import logging
+        logging.getLogger(__name__).warning('Property %s archive deferred: %s', property_id, archive_result['errors'])
+    return property_id
 
 def cached(key, max_age_days=30):
     with connect() as con:
